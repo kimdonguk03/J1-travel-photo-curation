@@ -1,0 +1,30 @@
+# 실행 결과와 캐시: 팀원 사진의 축소본이 들어 있으므로 올리지 않습니다
+j1_out/
+
+# 사진 원본: 실수로 올리지 않도록 막습니다 (문서용 이미지는 git add -f 로 따로 추가)
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.png
+*.PNG
+*.heic
+*.HEIC
+*.heif
+*.webp
+
+# 라벨 파일에는 사진 파일명과 장면 이름이 들어 있습니다. 공유하기로 정했다면 아래 줄을 지우세요
+labels_*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 편집기·OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
