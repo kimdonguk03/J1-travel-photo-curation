@@ -58,7 +58,10 @@ frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLi
 │   ├── labeler.py       평가용 정답(owner.csv) 수집 페이지
 │   ├── evaluate.py      추천 방식 비교 평가
 │   ├── params.json      추천 규칙 파라미터
+│   ├── requirements.txt
 │   └── tests/
+├── notebooks/
+│   └── experiments.ipynb  Colab 개발 실험 (처리 시간, 기준값 점검, 정답 페이지, 비교 평가)
 └── docs/
     ├── api.md             서버에서 추천 모듈을 쓰는 방법
     └── recommendation.md  추천 규칙과 평가 방법
@@ -70,12 +73,16 @@ frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLi
 
 ```powershell
 cd model
-py -m pip install numpy Pillow pillow-heif onnxruntime huggingface-hub
+py -m pip install -r requirements.txt
 py recommend.py --folder "C:\Photos\test_album" --out result.json
 py tests/test_rules.py
 ```
 
 처음 실행할 때 CLIP 모델(약 89MB)을 내려받습니다.
+
+### Colab 실험
+
+Google Drive의 사진으로 실험하려면 [notebooks/experiments.ipynb](notebooks/experiments.ipynb)를 Colab에서 엽니다([바로 열기](https://colab.research.google.com/github/kimdonguk03/J1-travel-photo-curation/blob/main/notebooks/experiments.ipynb)). 처리 시간, 기준값 점검, 평가 앨범 정답 페이지, 비교 평가를 순서대로 실행할 수 있습니다.
 
 ### 화면과 서버
 
