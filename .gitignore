@@ -13,8 +13,22 @@ j1_out/
 *.heif
 *.webp
 
-# 라벨 파일에는 사진 파일명과 장면 이름이 들어 있습니다. 공유하기로 정했다면 아래 줄을 지우세요
-labels_*.json
+# 정답 파일(owner.csv)에는 사진 파일명과 장면 이름이 들어 있습니다. 공유하기로 정했다면 아래 줄을 지우세요
+owner*.csv
+# 평가 세션 로그
+session_log*.json
+
+# 서버 비밀값과 로컬 DB (키 이름은 .env.example로 공유)
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+
+# 프론트엔드
+node_modules/
+dist/
+build/
 
 # Python
 __pycache__/

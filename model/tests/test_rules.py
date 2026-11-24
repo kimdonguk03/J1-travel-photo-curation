@@ -1,0 +1,207 @@
+"""추천 규칙 단위 테스트. 실행: py tests/test_rules.py"""
+import datetime as dt
+import math
+import sys
+import tempfile
+from pathlib import Path
+
+import numpy as np
+from PIL import Image, ImageDraw
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import evaluate as E  # noqa: E402
+import j1_image as J  # noqa: E402
+import recommend as R  # noqa: E402
+
+P = R.load_params()
+BASE = dt.datetime(2026, 10, 1, 9, 0, 0)
+
+
+def items_at(times, unknown=0):
+    """초 단위 시각 목록으로 Item을 만듭니다. unknown개는 촬영 시각 미상."""
+    out = [R.Item(f"p{i:03d}", f"IMG_{i:03d}.jpg", Path("x"), BASE + dt.timedelta(seconds=s),
+                  (BASE + dt.timedelta(seconds=s) - R._EPOCH).total_seconds()) for i, s in enumerate(times)]
+    out += [R.Item(f"u{i:03d}", f"zz_{i:03d}.png", Path("x"), None, None) for i in range(unknown)]
+    return out
+
+
+def unit(deg):
+    return np.array([math.cos(math.radians(deg)), math.sin(math.radians(deg))])
+
+
+def rand_unit(n, dim=64, seed=0):
+    v = np.random.default_rng(seed).normal(size=(n, dim))
+    return v / np.linalg.norm(v, axis=1, keepdims=True)
+
+
+# --- 입력 -------------------------------------------------------------------
+def test_taken_at_parsing():
+    assert J.parse_exif_offset("+09:00") == 32400 and J.parse_exif_offset("-05:30") == -19800
+    assert J.parse_exif_datetime("0000:00:00 00:00:00") is None
+    local, off = J.parse_taken_at("2026-10-01T14:03:22.370+09:00")
+    assert local == dt.datetime(2026, 10, 1, 14, 3, 22, 370000) and off == 32400
+    assert J.parse_taken_at(None) == (None, None)
+
+
+def test_prepare_items_orders_unknown_last():
+    photos = [{"photo_id": "b", "relpath": "b.jpg", "path": "b", "taken_at": None},
+              {"photo_id": "c", "relpath": "c.jpg", "path": "c", "taken_at": "2026-10-01T10:00:05.000+09:00"},
+              {"photo_id": "a", "relpath": "a.jpg", "path": "a", "taken_at": "2026-10-01T10:00:05.000+09:00"},
+              {"photo_id": "d", "relpath": "sub\\d.jpg", "path": "d", "taken_at": "2026-10-01T09:00:00.000"}]
+    items = R.prepare_items(photos)
+    assert [i.photo_id for i in items] == ["d", "a", "c", "b"]  # 동점은 상대 경로순, 미상은 끝
+    assert items[0].relpath == "sub/d.jpg"
+
+
+# --- 시간 구간 ----------------------------------------------------------------
+def test_segment_gap_30s():
+    assert R.time_segments(items_at([0, 10, 45]), P) == [[0, 1], [2]]
+    assert R.time_segments(items_at([0, 30]), P) == [[0, 1]]  # 정확히 30초는 넘지 않음
+
+
+def test_segment_span_120s_from_first():
+    assert R.time_segments(items_at([0, 25, 50, 75, 100, 125, 150]), P) == [[0, 1, 2, 3, 4], [5, 6]]
+
+
+def test_segment_splits_at_date_change():
+    items = items_at([0, 15])
+    for it, d in zip(items, (dt.datetime(2026, 10, 1, 23, 59, 50), dt.datetime(2026, 10, 2, 0, 0, 5))):
+        it.local, it.t = d, (d - R._EPOCH).total_seconds()
+    assert R.time_segments(items, P) == [[0], [1]]
+
+
+# --- 유사 컷 묶기 --------------------------------------------------------------
+def test_compares_only_with_first_shot():
+    items = items_at([0, 2, 4])
+    emb = np.stack([unit(0), unit(18.19), unit(31.79)])  # a-b 0.95, a-c 0.85, b-c 0.97
+    groups, _ = R.build_groups(items, emb, P)
+    assert groups == [[0, 1], [2]]
+
+
+def test_tie_goes_to_earlier_group_and_threshold_inclusive():
+    c, s = math.cos(math.radians(12)), math.sin(math.radians(12))
+    items = items_at([0, 1, 2])
+    emb = np.array([[c, -s], [c, s], [1.0, 0.0]])  # 두 기준 컷은 0.913으로 따로, 셋째는 둘 다 0.978
+    assert R.build_groups(items, emb, P)[0] == [[0, 2], [1]]
+    emb2 = np.array([[1.0, 0.0], [0.92, math.sqrt(1 - 0.92 ** 2)]])
+    assert R.build_groups(items_at([0, 1]), emb2, P)[0] == [[0, 1]]
+
+
+def test_unknown_time_is_single_and_time_only_grouping():
+    items = items_at([0, 5, 100], unknown=2)
+    emb = np.tile([1.0, 0.0], (5, 1))
+    assert R.build_groups(items, emb, P)[0] == [[0, 1], [2], [3], [4]]
+    assert R.build_groups(items, emb, P, use_clip=False)[0] == [[0, 1], [2], [3], [4]]
+
+
+def test_rank_ties_by_capture_order():
+    assert R.rank_groups([[0, 1, 2]], np.array([5.0, 9.0, 9.0])) == [[1, 2, 0]]
+
+
+# --- 고르기 -------------------------------------------------------------------
+def test_mmr_prefers_less_redundant():
+    """λ=0.5에서 둘째 날 두 후보의 크기 점수가 같고 첫날 대표 컷과의 유사도가 0.9, 0.3이면 0.3인 후보가 뽑힌다."""
+    items = items_at([0, 86400, 86400 + 3600])
+    emb = np.array([[1, 0, 0], [0.9, math.sqrt(1 - 0.81), 0], [0.3, 0, math.sqrt(1 - 0.09)]])
+    groups, _ = R.build_groups(items, emb, P)
+    draft = R.select_draft(items, groups, R.rank_groups(groups, np.zeros(3)), emb, 2, P)
+    assert draft == [0, 2]
+
+
+def test_more_dates_than_k_uses_spread_dates():
+    items = items_at([86400 * d for d in range(12)])
+    emb = rand_unit(12)
+    groups, _ = R.build_groups(items, emb, P)
+    draft = R.select_draft(items, groups, R.rank_groups(groups, np.zeros(12)), emb, 10, P)
+    assert draft == [0, 1, 3, 4, 5, 6, 7, 9, 10, 11]  # floor((j+0.5)x12/10)
+
+
+def test_slot_allocation_sqrt_rule():
+    day1 = [3600 * h for h in range(9)]
+    day2 = [86400 + 3600 * h for h in range(4)]
+    items = items_at(day1 + day2)
+    emb = rand_unit(13, seed=1)
+    groups, _ = R.build_groups(items, emb, P)
+    draft = R.select_draft(items, groups, R.rank_groups(groups, np.zeros(13)), emb, 5, P)
+    assert sum(i < 9 for i in draft) == 3 and sum(i >= 9 for i in draft) == 2
+
+
+def test_unknown_joins_from_step_two():
+    items = items_at([0, 3600, 7200], unknown=4)
+    emb = rand_unit(7, seed=2)
+    groups, _ = R.build_groups(items, emb, P)
+    draft = R.select_draft(items, groups, R.rank_groups(groups, np.zeros(7)), emb, 3, P)
+    assert sum(i < 3 for i in draft) == 1 and sum(i >= 3 for i in draft) == 2
+
+
+def test_fill_when_fewer_groups_than_k():
+    items = items_at([0, 1, 2, 3600, 3601, 7200])
+    emb = np.tile([1.0, 0.0], (6, 1))
+    groups, _ = R.build_groups(items, emb, P)
+    assert groups == [[0, 1, 2], [3, 4], [5]]
+    ranked = R.rank_groups(groups, np.array([1.0, 3.0, 2.0, 5.0, 4.0, 1.0]))
+    assert R.select_draft(items, groups, ranked, emb, 5, P) == [1, 2, 3, 4, 5]
+    assert R.select_draft(items, groups, ranked, emb, 6, P) == [0, 1, 2, 3, 4, 5]
+
+
+def test_k_is_min_10_n_and_draft_distinct():
+    for n in (7, 10, 23):
+        items = items_at([45 * i for i in range(n)])
+        a = R.Analysis(items, np.zeros(n), rand_unit(n, seed=n), P, [], {}, "test")
+        draft = a.run("time_clip")
+        assert len(draft) == min(10, n) == len(set(draft))
+
+
+def test_uniform_baseline():
+    assert R.uniform_draft(300, 10) == [15, 45, 75, 105, 135, 165, 195, 225, 255, 285]
+    assert R.uniform_draft(10, 10) == list(range(10))
+
+
+def test_boundary_burst_301():
+    """300·301번째가 같은 연사(같은 벡터, 1초 간격)면 한 묶음이 된다."""
+    times = [40 * i for i in range(300)] + [40 * 299 + 1]
+    items = items_at(times)
+    emb = rand_unit(301, seed=3)
+    emb[300] = emb[299]
+    groups, _ = R.build_groups(items, emb, P)
+    assert [299, 300] in groups and len(groups) == 300
+
+
+def test_features_independent_of_batch_size():
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        photos = []
+        for i in range(37):
+            im = Image.new("RGB", (120, 90), ((i * 37) % 255, (i * 91) % 255, 120))
+            ImageDraw.Draw(im).rectangle((i, 10, i + 30, 60), fill=(255, 255, 255))
+            p = d / f"IMG_{i:03d}.png"
+            im.save(p)
+            photos.append({"photo_id": p.name, "relpath": p.name, "path": str(p), "taken_at": None})
+        items = R.prepare_items(photos)
+        emb_obj, _ = R.get_embedder("tiny")
+        s1, e1, _, _ = R.compute_features(items, emb_obj, d / "c1", batch=16)
+        s2, e2, _, _ = R.compute_features(items, emb_obj, d / "c2", batch=64)
+        assert np.allclose(s1, s2) and np.allclose(e1, e2)
+
+
+# --- 채점 ---------------------------------------------------------------------
+def test_owner_csv_scoring():
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "owner.csv"
+        p.write_text("album_id,scene_id,relpath,owner_pick\n"
+                     "jeju,S01_해변,a.jpg,1\njeju,S01_해변,b.jpg,0\n"
+                     "jeju,S02_저녁,c.jpg,1\njeju,S03_야경,d\\e.jpg,0\n", encoding="utf-8-sig")
+        owner = E.load_owner_csv(p)
+    assert owner.scenes == {"S01_해변": {"a.jpg", "b.jpg"}, "S02_저녁": {"c.jpg"}, "S03_야경": {"d/e.jpg"}}
+    assert owner.picks == {"a.jpg", "c.jpg"}
+    r = E.score_draft(["b.jpg", "d/e.jpg", "x.jpg"], owner)
+    assert (r["scene_hits"], r["scenes"], r["matched"], r["picks"]) == (2, 3, 0, 2)
+    assert r["missed"] == ["S02_저녁"]
+
+
+if __name__ == "__main__":
+    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    for fn in tests:
+        fn()
+        print(f"ok  {fn.__name__}")
+    print(f"{len(tests)}개 통과")

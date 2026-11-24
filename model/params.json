@@ -1,0 +1,9 @@
+{
+  "seg_gap_sec": 30,
+  "seg_span_sec": 120,
+  "clip_sim": 0.92,
+  "lambda": 0.5,
+  "size_cap": 5,
+  "day_start_hour": 0,
+  "random_seeds": 200
+}
