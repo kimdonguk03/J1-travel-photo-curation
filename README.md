@@ -54,6 +54,7 @@ frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLi
 │   ├── j1_image.py      사진 읽기: 폴더 스캔, 촬영 시각, 정방향 이미지, 썸네일
 │   ├── recommend.py     추천: recommend(photos, k)
 │   ├── curation.py      개발 앨범 점검 화면
+│   ├── pair_check.py    사진 쌍 표시로 유사도 기준값 점검
 │   ├── labeler.py       평가용 정답(owner.csv) 수집 페이지
 │   ├── evaluate.py      추천 방식 비교 평가
 │   ├── params.json      추천 규칙 파라미터
