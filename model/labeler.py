@@ -64,6 +64,13 @@ body.simple .adv{display:none !important}
 .card img{cursor:default}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--accent);color:#fff;padding:8px 14px;border-radius:8px;display:none;z-index:9}
 .over b{color:#dc2626}
+#step2{position:fixed;inset:0;z-index:20;background:var(--bg);overflow:auto;display:none;padding:12px 16px 40px}
+#step2 .top{position:sticky;top:0;background:var(--bg);padding:6px 0 10px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:2}
+#step2 .pick{display:flex;gap:14px;align-items:flex-start;margin:12px 0}
+#step2 .pick img{width:260px;height:260px;object-fit:contain;background:rgba(127,127,127,.15);border-radius:8px;border:3px solid var(--pick)}
+#step2 .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+#step2 .card.alt{border-color:#16a34a}
+#step2 .card.alt .altbtn{background:#16a34a;border-color:#16a34a;color:#fff}
 </style></head><body class="simple">
 <header>
   <div class="bar">
@@ -71,6 +78,7 @@ body.simple .adv{display:none !important}
     <span class="stat" id="pickStat">★ <b id="nPick">0</b>/__K__장</span>
     <button class="primary" id="save">저장</button>
     <button id="clearAll">모두 지우기</button>
+    <button id="step2Btn" hidden>2단계: 대신 써도 되는 사진 (선택)</button>
     <span class="stat" id="shown"></span>
     <button class="adv" id="advToggle" hidden>고급</button>
     <span class="stat adv">중요 장면 <b id="nScene">0</b>개 · 인정 컷 <b id="nCut">0</b>장</span>
@@ -81,12 +89,14 @@ body.simple .adv{display:none !important}
   <div class="edit adv" id="edit"></div>
 </header>
 <div id="toast"></div>
+<div id="step2"></div>
 <main>
 <details class="help" open><summary><b>하는 법</b></summary>
 <ol>
 <li>처음에는 아무것도 골라져 있지 않습니다. 이 여행에 못 온 친한 친구에게 보여줄 사진 __K__장에서만 <b>☆ 고르기</b>를 누르세요. 다시 누르면 취소됩니다.</li>
 <li>'+3 펼치기'가 붙은 사진은 거의 같은 연사를 한 장으로 접어 둔 것입니다. 묶음 안의 다른 컷이 더 좋으면 펼쳐서 그 컷을 고르세요.</li>
-<li>__K__장을 다 고르면 <b>[저장]</b>을 누르고, 내려받은 파일을 보내 주세요. 고른 내용은 이 브라우저에 자동 저장됩니다.</li>
+<li>(선택) __K__장을 다 고르면 위에 <b>[2단계]</b> 버튼이 생깁니다. 고른 사진마다 앞뒤 사진을 보여주니, <b>그 사진 대신 보여줘도 괜찮은 사진</b>만 골라 주세요. 평가가 더 정확해집니다.</li>
+<li><b>[저장]</b>을 누르고 내려받은 파일을 보내 주세요. 고른 내용은 이 브라우저에 자동 저장됩니다.</li>
 </ol>
 <p class="cap">사진 순서는 촬영 시각 순서이고, 이 화면에는 추천 결과가 없습니다.</p></details>
 <div id="list"></div>
@@ -164,7 +174,8 @@ function importCsv(text) {
 
 function counts() {
   nPick.textContent = picks.size;
-  document.getElementById("pickStat").classList.toggle("over", picks.size > ALBUM.k); nScene.textContent = scenes.length; nCut.textContent = Object.keys(sceneOf).length;
+  document.getElementById("pickStat").classList.toggle("over", picks.size > ALBUM.k);
+  document.getElementById("step2Btn").hidden = picks.size < Math.min(ALBUM.k, PHOTOS.length) || picks.size === 0; nScene.textContent = scenes.length; nCut.textContent = Object.keys(sceneOf).length;
 }
 
 function renderBar() {
@@ -236,6 +247,7 @@ function renderList() {
       } else {
         if (picks.size >= ALBUM.k) { toast(`★는 ${ALBUM.k}장까지예요. 먼저 하나를 빼 주세요.`); return; }
         picks.add(p.r);
+        if (picks.size === ALBUM.k) toast(`${ALBUM.k}장을 다 골랐어요. [저장]하거나 [2단계]로 넘어가세요.`);
         // ★를 누르면 그 사진의 장면을 자동으로 만들고 선택 -> 비슷한 컷은 '넣기'만 누르면 됨
         if (!sceneOf[p.r]) {
           const s = {id: nextId++, name: p.d ? `${p.d} ${p.t.slice(0, 5)}` : "", auto: true};
@@ -274,6 +286,68 @@ function toast(msg) {
   const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block";
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.display = "none"; }, 2500);
 }
+// ---- 2단계: 고른 사진마다 '대신 보여줘도 괜찮은 사진' 고르기 ----
+let step2At = 0;
+function pickOrder() { return PHOTOS.map((p, i) => i).filter(i => picks.has(PHOTOS[i].r)); }
+function sceneForPick(i) {
+  const p = PHOTOS[i];
+  if (!sceneOf[p.r]) {
+    const s = {id: nextId++, name: p.d ? `${p.d} ${p.t.slice(0, 5)}` : "", auto: true};
+    scenes.push(s); sceneOf[p.r] = s.id;
+  }
+  return sceneOf[p.r];
+}
+function neighbors(i) {
+  const p = PHOTOS[i], out = [];
+  for (let j = Math.max(0, i - 12); j <= Math.min(PHOTOS.length - 1, i + 12); j++) {
+    if (j === i) continue;
+    const q = PHOTOS[j];
+    if (p.ts != null && q.ts != null) { if (p.d !== q.d || Math.abs(q.ts - p.ts) > 1800) continue; }
+    else if (p.ts != null || q.ts != null) continue;
+    out.push(j);
+  }
+  return out;
+}
+function renderStep2() {
+  const box = document.getElementById("step2"), order = pickOrder();
+  if (!order.length) { box.style.display = "none"; return; }
+  step2At = Math.max(0, Math.min(step2At, order.length - 1));
+  const i = order[step2At], p = PHOTOS[i], sid = sceneForPick(i);
+  box.textContent = "";
+  const top = el("div", "top");
+  top.append(el("b", null, `2단계 (${step2At + 1}/${order.length})`),
+             el("span", null, "노란 테두리 사진 대신 보여줘도 괜찮은 사진만 고르세요. 없으면 [다음]."));
+  const prev = el("button", null, "◀ 이전"), next = el("button", "primary", step2At + 1 < order.length ? "다음 ▶" : "끝내기"),
+        done = el("button", null, "닫기");
+  prev.disabled = step2At === 0;
+  prev.onclick = () => { step2At--; renderStep2(); box.scrollTop = 0; };
+  next.onclick = () => { if (step2At + 1 < order.length) { step2At++; renderStep2(); box.scrollTop = 0; } else closeStep2(); };
+  done.onclick = closeStep2;
+  top.append(prev, next, done);
+  const pick = el("div", "pick"), big = el("img"); big.src = p.src; big.alt = p.r;
+  pick.append(big, el("div", "cap", `고른 사진 · ${p.t || "촬영 시각 미상"} · ${p.r}`));
+  const grid = el("div", "grid");
+  const ns = neighbors(i);
+  for (const j of ns) {
+    const q = PHOTOS[j], mine = sceneOf[q.r] === sid, other = !mine && (picks.has(q.r) || (sceneOf[q.r] && sceneOf[q.r] !== sid));
+    const card = el("div", "card" + (mine ? " alt" : ""));
+    const im = el("img"); im.src = q.src; im.alt = q.r; im.loading = "lazy";
+    const b = el("button", "altbtn", other ? (picks.has(q.r) ? "다른 고른 사진" : "다른 사진의 대안") : (mine ? "✓ 대신 써도 됨" : "대신 써도 됨"));
+    b.type = "button"; b.disabled = other;
+    b.onclick = () => { if (sceneOf[q.r] === sid) delete sceneOf[q.r]; else sceneOf[q.r] = sid; persist(); renderStep2(); };
+    card.append(im, el("div", "cap", (q.t || "촬영 시각 미상") + " · " + q.r), b);
+    grid.append(card);
+  }
+  box.append(top, pick, ns.length ? grid : el("p", "cap", "앞뒤로 비교할 사진이 없습니다. [다음]을 누르세요."));
+  box.style.display = "block";
+}
+function closeStep2() {
+  document.getElementById("step2").style.display = "none";
+  persist(); renderTags(); renderBarChipsOnly(); counts();
+  toast("[저장]을 눌러 파일을 내려받으세요.");
+}
+document.getElementById("step2Btn").onclick = () => { step2At = 0; renderStep2(); };
+
 document.getElementById("clearAll").onclick = () => {
   if (!picks.size || !confirm(`고른 ${picks.size}장을 모두 지울까요?`)) return;
   picks = new Set(); scenes = []; sceneOf = {}; active = null;
@@ -374,7 +448,7 @@ def main(argv=None):
         data.append({"r": it.relpath, "src": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(),
                      "d": "" if d is None else f"{d:%m/%d}({WEEKDAY[d.weekday()]})",
                      "t": "" if d is None else f"{d:%H:%M:%S}",
-                     "g": info[i][0], "lead": info[i][1], "n": info[i][2]})
+                     "g": info[i][0], "lead": info[i][1], "n": info[i][2], "ts": it.t})
     out_dir = album_out_dir(args.work, root)
     out_dir.mkdir(parents=True, exist_ok=True)
     k = args.k or min(10, len(items))
