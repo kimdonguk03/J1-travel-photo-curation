@@ -41,8 +41,8 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px so
 button,.btn{font:inherit;border:1px solid var(--line);background:var(--btn);color:var(--fg);border-radius:6px;padding:3px 10px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button[disabled]{opacity:.45;cursor:default}
-.scenes{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
-.chip{border-radius:999px;padding:2px 10px;border:2px solid transparent;cursor:pointer;background:var(--btn)}
+.scenes{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;margin-top:6px;align-items:center;padding-bottom:2px}
+.chip{flex:0 0 auto;white-space:nowrap;border-radius:999px;padding:1px 9px;border:2px solid transparent;cursor:pointer;background:var(--btn);font-size:13px}
 .chip.active{border-color:var(--accent);font-weight:700}
 .edit{display:flex;gap:6px;align-items:center;margin-top:6px}
 .edit input{font:inherit;width:260px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)}
@@ -53,17 +53,20 @@ h2{font-size:15px;margin:18px 0 8px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
 .card{background:var(--card);border:2px solid transparent;border-radius:8px;padding:4px;border-top-width:6px}
 .card.picked{border-color:var(--pick)}
-.card img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:5px;display:block;cursor:pointer}
+.card img{width:100%;aspect-ratio:1/1;object-fit:contain;background:rgba(127,127,127,.15);border-radius:5px;display:block;cursor:pointer}
 .cap{font-size:12px;color:var(--muted);margin:3px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tag{font-size:12px;font-weight:700;margin:0 2px 3px;min-height:18px}
 .acts{display:flex;gap:4px}.acts button{flex:1;font-size:12px;padding:3px 4px}
 .card.picked .star{background:var(--pick);border-color:var(--pick);color:#000}
+.card.member{opacity:.92;outline:2px dashed var(--line);outline-offset:-2px}
+.more{width:100%;margin-top:4px;font-size:12px;padding:2px 4px}
 </style></head><body>
 <header>
   <div class="bar">
     <strong>__ALBUM__</strong>
     <span class="stat">★ <b id="nPick">0</b>/__K__장</span>
     <span class="stat">중요 장면 <b id="nScene">0</b>개 · 인정 컷 <b id="nCut">0</b>장</span>
+    <span class="stat" id="shown"></span>
     <button id="addScene">+ 새 장면</button>
     <button class="primary" id="save">owner.csv 저장</button>
     <label class="btn">불러오기<input type="file" id="load" accept=".csv,text/csv" hidden></label>
@@ -75,7 +78,8 @@ h2{font-size:15px;margin:18px 0 8px}
 <details class="help" open><summary><b>표시 순서</b> (촬영 시각 순서입니다. 이 화면에는 알고리즘 결과가 없습니다.)</summary>
 <ol>
 <li>이 여행에 못 온 친한 친구에게 보여줄 __K__장에 ★를 누르세요. 사진을 눌러도 됩니다. <b>★를 누르면 그 사진의 장면이 자동으로 만들어지고 선택됩니다.</b></li>
-<li>바로 앞뒤에서 <b>그 사진 대신 보여줘도 괜찮은 비슷한 컷</b>이 보이면 '넣기'를 누르세요. 장면마다 2~3장이면 충분하고, 없으면 넘어가도 됩니다.</li>
+<li><b>거의 똑같은 연사는 한 장으로 접혀 있습니다</b>('+3 펼치기'). 접힌 사진에 ★를 누르면 묶음 전체가 그 장면의 인정 컷이 됩니다. 묶음 안의 다른 컷을 고르려면 펼쳐서 고르세요.</li>
+<li>그 밖에 <b>대신 보여줘도 괜찮은 비슷한 컷</b>이 보이면 '넣기'를 누르세요(선택).</li>
 <li>★는 아니지만 꼭 들어가야 할 장면이 더 있으면 [+ 새 장면]으로 만들 수 있습니다(선택).</li>
 <li>[owner.csv 저장]을 눌러 파일을 보내 주세요. 전체 10분 정도면 됩니다. 표시 내용은 이 브라우저에 자동 저장됩니다.</li>
 </ol></details>
@@ -86,7 +90,8 @@ const ALBUM = __ALBUM_JSON__;
 const PHOTOS = __PHOTOS_JSON__;
 const KEY = "j1-owner:" + ALBUM.file;
 const INDEX = new Map(PHOTOS.map((p, i) => [p.r, i]));
-let picks = new Set(), scenes = [], sceneOf = {}, active = null, nextId = 1;
+let picks = new Set(), scenes = [], sceneOf = {}, active = null, nextId = 1, expanded = new Set();
+const GROUPS = {}; PHOTOS.forEach((p, i) => { (GROUPS[p.g] = GROUPS[p.g] || []).push(i); });
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function hue(id) { return (id * 67) % 360; }
@@ -160,7 +165,8 @@ function renderBar() {
   if (!scenes.length) box.append(el("span", "cap", "아직 장면이 없습니다. [+ 새 장면]으로 만드세요."));
   for (const s of scenes) {
     const n = Object.values(sceneOf).filter(id => id === s.id).length;
-    const c = el("span", "chip" + (s.id === active ? " active" : ""), `${label(s)} (${n})`);
+    const c = el("span", "chip" + (s.id === active ? " active" : ""), `${label(s).split(" ")[0]} (${n})`);
+    c.title = label(s);
     c.style.background = `hsl(${hue(s.id)} 70% 50% / .22)`;
     c.onclick = () => { active = s.id; persist(); renderAll(); };
     box.append(c);
@@ -182,7 +188,7 @@ function renderBar() {
 
 function renderBarChipsOnly() {
   const chips = document.querySelectorAll("#scenes .chip");
-  scenes.forEach((s, i) => { if (chips[i]) chips[i].textContent = `${label(s)} (${Object.values(sceneOf).filter(id => id === s.id).length})`; });
+  scenes.forEach((s, i) => { if (chips[i]) { chips[i].textContent = `${label(s).split(" ")[0]} (${Object.values(sceneOf).filter(id => id === s.id).length})`; chips[i].title = label(s); } });
 }
 
 function renderTags() {
@@ -200,18 +206,24 @@ function renderTags() {
 function renderList() {
   const list = document.getElementById("list"); list.textContent = "";
   let grid = null, last = null;
+  let shown = 0;
   PHOTOS.forEach((p, i) => {
+    if (p.n > 1 && !p.lead && !expanded.has(p.g)) return;  // 접힌 연사
+    shown++;
     const day = p.d || "촬영 시각 미상";
     if (day !== last) { list.append(el("h2", null, day)); grid = el("div", "grid"); list.append(grid); last = day; }
-    const card = el("div", "card" + (picks.has(p.r) ? " picked" : "")); card.dataset.i = i;
+    const card = el("div", "card" + (picks.has(p.r) ? " picked" : "") + (p.n > 1 && !p.lead ? " member" : "")); card.dataset.i = i;
     const img = el("img"); img.src = p.src; img.alt = p.r; img.title = p.r; img.loading = "lazy";
     const togglePick = () => {
       if (picks.has(p.r)) {
         picks.delete(p.r);
         // ★로 자동 생성한 장면에 이 사진만 있으면 장면도 지움
+        // ★로 자동 생성한 장면에 이 묶음 사진만 있고 ★가 하나도 없으면 장면도 지움
         const id = sceneOf[p.r], s = sceneById(id);
-        if (s && s.auto && Object.values(sceneOf).filter(x => x === id).length === 1) {
-          delete sceneOf[p.r]; scenes = scenes.filter(x => x !== s);
+        const inScene = Object.keys(sceneOf).filter(r => sceneOf[r] === id);
+        if (s && s.auto && inScene.every(r => PHOTOS[INDEX.get(r)].g === p.g && !picks.has(r))) {
+          for (const r of inScene) delete sceneOf[r];
+          scenes = scenes.filter(x => x !== s);
           if (active === id) active = scenes.length ? scenes[scenes.length - 1].id : null;
         }
       } else {
@@ -219,10 +231,11 @@ function renderList() {
         // ★를 누르면 그 사진의 장면을 자동으로 만들고 선택 -> 비슷한 컷은 '넣기'만 누르면 됨
         if (!sceneOf[p.r]) {
           const s = {id: nextId++, name: p.d ? `${p.d} ${p.t.slice(0, 5)}` : "", auto: true};
-          scenes.push(s); sceneOf[p.r] = s.id; active = s.id;
+          scenes.push(s); active = s.id;
+          for (const j of GROUPS[p.g]) if (!sceneOf[PHOTOS[j].r]) sceneOf[PHOTOS[j].r] = s.id;  // 접힌 연사 전체
         } else active = sceneOf[p.r];
       }
-      card.classList.toggle("picked", picks.has(p.r)); persist(); renderBar(); renderTags(); counts();
+      card.classList.toggle("picked", picks.has(p.r)); persist(); renderBar(); renderTags(); renderBarChipsOnly(); counts();
     };
     img.onclick = togglePick;
     const star = el("button", "star", "★ " + ALBUM.k + "장"); star.type = "button"; star.onclick = togglePick;
@@ -233,8 +246,19 @@ function renderList() {
     };
     const acts = el("div", "acts"); acts.append(star, scn);
     card.append(img, el("div", "cap", (p.t || "촬영 시각 미상") + " · " + p.r), el("div", "tag"), acts);
+    if (p.n > 1 && p.lead) {
+      const more = el("button", "more", expanded.has(p.g) ? "접기" : `+${p.n - 1} 펼치기 (거의 같은 연사)`); more.type = "button";
+      more.onclick = () => {
+        expanded.has(p.g) ? expanded.delete(p.g) : expanded.add(p.g);
+        renderList(); renderAll();
+        const c = document.querySelector(`[data-i="${i}"]`); if (c) c.scrollIntoView({block: "center"});
+      };
+      card.append(more);
+    }
     grid.append(card);
   });
+  const groupsN = Object.keys(GROUPS).length;
+  document.getElementById("shown").textContent = groupsN < PHOTOS.length ? `· 사진 ${PHOTOS.length}장 → 묶어서 ${groupsN}개` : "";
 }
 
 function renderAll() { renderBar(); renderTags(); counts(); }
@@ -268,6 +292,26 @@ renderList(); renderAll();
 """
 
 
+DUP_SIM = 0.96      # 정답 화면에서 접을 '거의 같은 연사'의 유사도 하한 (추천 기준값보다 엄격하게)
+DUP_GAP_SEC = 10    # 접을 연사의 연속 촬영 간격 상한(초)
+
+
+def dup_groups(a, sim_th, gap_sec):
+    """촬영순으로 보며 직전 사진과 gap_sec 이내, 묶음 첫 사진과 유사도 sim_th 이상이면 같은 묶음."""
+    groups = []
+    for i, it in enumerate(a.items):
+        if groups:
+            g = groups[-1]
+            prev = a.items[g[-1]]
+            if (it.t is not None and prev.t is not None and it.t - prev.t <= gap_sec
+                    and R.day_of(it, a.params) == R.day_of(prev, a.params)
+                    and float(a.emb[g[0]] @ a.emb[i]) >= sim_th):
+                g.append(i)
+                continue
+        groups.append([i])
+    return groups
+
+
 def _js(obj):
     return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
 
@@ -280,19 +324,30 @@ def main(argv=None):
     ap.add_argument("--cache", default=str(R.DEFAULT_CACHE))
     ap.add_argument("--work", default="j1_out")
     ap.add_argument("--size", type=int, default=320, help="축소본 긴 변 (기본 320, 최대 512)")
+    ap.add_argument("--embedder", choices=["clip", "tiny", "none"], default="clip",
+                    help="거의 같은 연사를 접을 때 쓰는 임베딩 (none이면 접지 않음)")
+    ap.add_argument("--clip-model")
+    ap.add_argument("--dup-sim", type=float, default=DUP_SIM, help=f"접을 연사의 유사도 하한 (기본 {DUP_SIM})")
+    ap.add_argument("--dup-gap", type=float, default=DUP_GAP_SEC, help=f"접을 연사의 촬영 간격 상한(초, 기본 {DUP_GAP_SEC})")
     args = ap.parse_args(argv)
 
     root = Path(args.album).resolve()
     photos, videos, failed = R.photos_from_folder(root)
-    items = R.prepare_items(photos)
-    keys = {it.photo_id: R._photo_key(it.path) for it in items}
-    bad, _ = R.ensure_work_images([(it.path, keys[it.photo_id]) for it in items], args.cache, log=print)
-    items = [it for it in items if keys[it.photo_id] not in bad]
-    if not items:
+    try:
+        a = R.analyze(photos, embedder=args.embedder, clip_model=args.clip_model, cache_dir=args.cache,
+                      drop_failed=True, log=print)
+    except ValueError:
         raise SystemExit("표시할 사진이 없습니다.")
+    items = a.items
+    groups = dup_groups(a, args.dup_sim, args.dup_gap) if a.emb is not None else [[i] for i in range(len(items))]
+    info = {}
+    for gi, g in enumerate(groups):
+        lead = max(g, key=lambda i: (a.sharp[i], -i))
+        for i in g:
+            info[i] = (gi, i == lead, len(g))
     data = []
-    for it in items:
-        with Image.open(R.work_image_path(args.cache, keys[it.photo_id])) as im:
+    for i, it in enumerate(items):
+        with Image.open(R.work_image_path(args.cache, R._photo_key(it.path))) as im:
             im = im.convert("RGB")
         im.thumbnail((args.size, args.size))
         buf = io.BytesIO()
@@ -300,7 +355,8 @@ def main(argv=None):
         d = it.local
         data.append({"r": it.relpath, "src": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode(),
                      "d": "" if d is None else f"{d:%m/%d}({WEEKDAY[d.weekday()]})",
-                     "t": "" if d is None else f"{d:%H:%M:%S}"})
+                     "t": "" if d is None else f"{d:%H:%M:%S}",
+                     "g": info[i][0], "lead": info[i][1], "n": info[i][2]})
     out_dir = album_out_dir(args.work, root)
     out_dir.mkdir(parents=True, exist_ok=True)
     k = args.k or min(10, len(items))
@@ -312,7 +368,9 @@ def main(argv=None):
                 .replace("__PHOTOS_JSON__", _js(data)))
     out = out_dir / f"label_{out_dir.name}.html"
     out.write_text(page, encoding="utf-8")
-    print(f"사진 {len(items)}장 (동영상 {videos}개, 읽기 실패 {len(failed) + len(bad)}장), album_id={meta['id']}, K={k}")
+    print(f"사진 {len(items)}장 (동영상 {videos}개, 읽기 실패 {len(failed) + len(a.failed)}장), album_id={meta['id']}, K={k}")
+    if len(groups) < len(items):
+        print(f"거의 같은 연사(유사도 {args.dup_sim} 이상, {args.dup_gap:g}초 이내)를 접어서 {len(groups)}개로 표시합니다.")
     print(f"정답 표시 페이지: {out.resolve()}")
     print("앨범 주인에게 이 파일만 열어 주세요. compare.html(추천 결과)은 owner.csv를 받은 뒤에 보여줍니다.")
 
