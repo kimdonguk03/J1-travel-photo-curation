@@ -21,13 +21,13 @@ from recommend import recommend
 
 | 함수 | 용도 | 돌려주는 값 |
 |---|---|---|
-| `scan_folder(root)` | 앨범 불러오기 | `(photos, video_count, failed)`. photos는 `[{"relpath", "path"}]`이고 상대 경로 구분자는 `/`입니다. 확장자는 대소문자를 구분하지 않고, MOV·MP4는 동영상 수로만 셉니다 |
+| `scan_folder(root)` | 앨범 불러오기 | `(photos, video_count, failed)`. photos는 `[{"relpath", "path"}]`이고 상대 경로 구분자는 `/`입니다. 사진 확장자는 `j1_image.PHOTO_EXTS`(jpg·jpeg·png·heic·heif·webp)이고 대소문자를 구분하지 않습니다. MOV·MP4는 동영상 수로만 셉니다 |
 | `read_taken_at(path)` | 촬영 시각 | `"2026-10-01T14:03:22.370+09:00"` 형식 문자열, 없으면 `None`. EXIF DateTimeOriginal만 씁니다 |
 | `jpeg_bytes(path, 512)` | 목록 썸네일 | 정방향 컬러 JPEG 바이트. EXIF를 넣지 않아 브라우저가 회전을 다시 적용하지 않습니다 |
 | `jpeg_bytes(path, 1600)` | 큰 미리보기 | 위와 같고 긴 변 최대 1600px. 작은 사진은 키우지 않습니다 |
 | `open_upright(path, max_side)` | 직접 가공 | 정방향 RGB `PIL.Image` |
 
-`open_upright`나 `jpeg_bytes`가 예외를 내는 사진(파일 손상 등)은 읽기 실패로 세고 추천 입력에서 뺍니다. HEIC 세로 사진은 디코더가 열면서 한 번만 회전합니다.
+`open_upright`나 `jpeg_bytes`가 예외를 내는 사진(파일 손상 등)은 읽기 실패로 세고 추천 입력에서 뺍니다. HEIC·HEIF 세로 사진은 디코더가 열면서 한 번만 회전합니다. 갤럭시의 '고효율 사진'은 기종에 따라 `.heic`나 `.heif`로 저장되므로, 확장자 목록을 따로 만들지 말고 `PHOTO_EXTS`를 씁니다.
 
 ## `recommend(photos, k)`
 
