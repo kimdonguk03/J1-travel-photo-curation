@@ -70,6 +70,7 @@ body.simple .adv{display:none !important}
     <strong>__ALBUM__</strong>
     <span class="stat" id="pickStat">★ <b id="nPick">0</b>/__K__장</span>
     <button class="primary" id="save">저장</button>
+    <button id="clearAll">모두 지우기</button>
     <span class="stat" id="shown"></span>
     <button class="adv" id="advToggle" hidden>고급</button>
     <span class="stat adv">중요 장면 <b id="nScene">0</b>개 · 인정 컷 <b id="nCut">0</b>장</span>
@@ -83,8 +84,8 @@ body.simple .adv{display:none !important}
 <main>
 <details class="help" open><summary><b>하는 법</b></summary>
 <ol>
-<li>이 여행에 못 온 친한 친구에게 보여줄 사진 __K__장을 골라 <b>★ 버튼</b>을 누르세요. 다시 누르면 취소됩니다.</li>
-<li>'+3 펼치기'가 붙은 사진은 거의 같은 연사를 한 장으로 접어 둔 것입니다. 묶음 안의 다른 컷이 더 좋으면 펼쳐서 그 컷에 ★를 누르세요.</li>
+<li>처음에는 아무것도 골라져 있지 않습니다. 이 여행에 못 온 친한 친구에게 보여줄 사진 __K__장에서만 <b>☆ 고르기</b>를 누르세요. 다시 누르면 취소됩니다.</li>
+<li>'+3 펼치기'가 붙은 사진은 거의 같은 연사를 한 장으로 접어 둔 것입니다. 묶음 안의 다른 컷이 더 좋으면 펼쳐서 그 컷을 고르세요.</li>
 <li>__K__장을 다 고르면 <b>[저장]</b>을 누르고, 내려받은 파일을 보내 주세요. 고른 내용은 이 브라우저에 자동 저장됩니다.</li>
 </ol>
 <p class="cap">사진 순서는 촬영 시각 순서이고, 이 화면에는 추천 결과가 없습니다.</p></details>
@@ -93,7 +94,7 @@ body.simple .adv{display:none !important}
 <script>
 const ALBUM = __ALBUM_JSON__;
 const PHOTOS = __PHOTOS_JSON__;
-const KEY = "j1-owner:" + ALBUM.file;
+const KEY = "j1-owner-v2:" + ALBUM.file;  // 예전 페이지에서 표시한 내용은 불러오지 않음
 const INDEX = new Map(PHOTOS.map((p, i) => [p.r, i]));
 let picks = new Set(), scenes = [], sceneOf = {}, active = null, nextId = 1, expanded = new Set();
 const GROUPS = {}; PHOTOS.forEach((p, i) => { (GROUPS[p.g] = GROUPS[p.g] || []).push(i); });
@@ -242,9 +243,9 @@ function renderList() {
           for (const j of GROUPS[p.g]) if (!sceneOf[PHOTOS[j].r]) sceneOf[PHOTOS[j].r] = s.id;  // 접힌 연사 전체
         } else active = sceneOf[p.r];
       }
-      card.classList.toggle("picked", picks.has(p.r)); persist(); renderBar(); renderTags(); renderBarChipsOnly(); counts();
+      card.classList.toggle("picked", picks.has(p.r)); star.textContent = picks.has(p.r) ? "★ 골랐음" : "☆ 고르기"; persist(); renderBar(); renderTags(); renderBarChipsOnly(); counts();
     };
-    const star = el("button", "star", "★ " + ALBUM.k + "장"); star.type = "button"; star.onclick = togglePick;
+    const star = el("button", "star", picks.has(p.r) ? "★ 골랐음" : "☆ 고르기"); star.type = "button"; star.onclick = togglePick;
     const scn = el("button", "scn adv"); scn.type = "button";
     scn.onclick = () => {
       if (sceneOf[p.r]) delete sceneOf[p.r]; else if (sceneById(active)) sceneOf[p.r] = active;
@@ -273,6 +274,11 @@ function toast(msg) {
   const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block";
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.display = "none"; }, 2500);
 }
+document.getElementById("clearAll").onclick = () => {
+  if (!picks.size || !confirm(`고른 ${picks.size}장을 모두 지울까요?`)) return;
+  picks = new Set(); scenes = []; sceneOf = {}; active = null;
+  persist(); renderList(); renderAll();
+};
 // 장면·인정 컷 편집 화면은 주소 끝에 #advanced를 붙여 열 때만 보입니다 (평소에는 숨김)
 if (location.hash === "#advanced") document.body.classList.remove("simple");
 
