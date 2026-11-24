@@ -74,10 +74,10 @@ h2{font-size:15px;margin:18px 0 8px}
 <main>
 <details class="help" open><summary><b>표시 순서</b> (촬영 시각 순서입니다. 이 화면에는 알고리즘 결과가 없습니다.)</summary>
 <ol>
-<li><b>먼저</b> 이 여행에 못 온 친한 친구에게 보여줄 __K__장을 고르세요. 사진을 누르거나 ★ 버튼을 누릅니다. 휴대폰에서 이미 골랐다면 같은 사진에 ★를 표시하세요.</li>
-<li>[+ 새 장면]을 눌러 꼭 들어가야 할 중요 장면을 만들고 이름을 적으세요(예: 해변 단체사진, 첫날 저녁 식사).</li>
-<li>그 장면이 선택된 상태에서, <b>이 사진이 들어 있으면 그 장면을 담았다고 인정할 수 있는 컷</b>을 모두 '장면에 넣기' 하세요. ★ 사진도 해당 장면에 넣습니다. 한 사진은 한 장면에만 들어갑니다.</li>
-<li>[owner.csv 저장]을 눌러 파일을 팀에 보내 주세요. 장면에 넣지 않은 ★ 사진은 각각 별도 장면으로 저장됩니다. 표시 내용은 이 브라우저에도 자동 저장됩니다.</li>
+<li>이 여행에 못 온 친한 친구에게 보여줄 __K__장에 ★를 누르세요. 사진을 눌러도 됩니다. <b>★를 누르면 그 사진의 장면이 자동으로 만들어지고 선택됩니다.</b></li>
+<li>바로 앞뒤에서 <b>그 사진 대신 보여줘도 괜찮은 비슷한 컷</b>이 보이면 '넣기'를 누르세요. 장면마다 2~3장이면 충분하고, 없으면 넘어가도 됩니다.</li>
+<li>★는 아니지만 꼭 들어가야 할 장면이 더 있으면 [+ 새 장면]으로 만들 수 있습니다(선택).</li>
+<li>[owner.csv 저장]을 눌러 파일을 보내 주세요. 전체 10분 정도면 됩니다. 표시 내용은 이 브라우저에 자동 저장됩니다.</li>
 </ol></details>
 <div id="list"></div>
 </main>
@@ -205,7 +205,25 @@ function renderList() {
     if (day !== last) { list.append(el("h2", null, day)); grid = el("div", "grid"); list.append(grid); last = day; }
     const card = el("div", "card" + (picks.has(p.r) ? " picked" : "")); card.dataset.i = i;
     const img = el("img"); img.src = p.src; img.alt = p.r; img.title = p.r; img.loading = "lazy";
-    const togglePick = () => { picks.has(p.r) ? picks.delete(p.r) : picks.add(p.r); card.classList.toggle("picked", picks.has(p.r)); persist(); counts(); };
+    const togglePick = () => {
+      if (picks.has(p.r)) {
+        picks.delete(p.r);
+        // ★로 자동 생성한 장면에 이 사진만 있으면 장면도 지움
+        const id = sceneOf[p.r], s = sceneById(id);
+        if (s && s.auto && Object.values(sceneOf).filter(x => x === id).length === 1) {
+          delete sceneOf[p.r]; scenes = scenes.filter(x => x !== s);
+          if (active === id) active = scenes.length ? scenes[scenes.length - 1].id : null;
+        }
+      } else {
+        picks.add(p.r);
+        // ★를 누르면 그 사진의 장면을 자동으로 만들고 선택 -> 비슷한 컷은 '넣기'만 누르면 됨
+        if (!sceneOf[p.r]) {
+          const s = {id: nextId++, name: p.d ? `${p.d} ${p.t.slice(0, 5)}` : "", auto: true};
+          scenes.push(s); sceneOf[p.r] = s.id; active = s.id;
+        } else active = sceneOf[p.r];
+      }
+      card.classList.toggle("picked", picks.has(p.r)); persist(); renderBar(); renderTags(); counts();
+    };
     img.onclick = togglePick;
     const star = el("button", "star", "★ " + ALBUM.k + "장"); star.type = "button"; star.onclick = togglePick;
     const scn = el("button", "scn"); scn.type = "button";

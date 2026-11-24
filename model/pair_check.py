@@ -111,7 +111,8 @@ function pairRow(i, j, removable) {
 
 function renderCand() {
   const box = document.getElementById("cand"); box.textContent = "";
-  document.getElementById("candInfo").textContent = `${CAND.length}쌍 (10분 이내, 같은 날)`;
+  document.getElementById("candInfo").textContent =
+    `${CAND.length}쌍 · 연속 사진 ${ALBUM.total}쌍 중 판단이 필요한 유사도 ${ALBUM.low}~${ALBUM.high} 구간만 (약 10분)`;
   if (!CAND.length) box.append(el("p", "meta", "후보가 없습니다. 직접 고르기를 쓰세요."));
   for (const [i, j] of CAND) box.append(pairRow(i, j, false));
 }
@@ -240,6 +241,8 @@ def main(argv=None):
     ap.add_argument("--params")
     ap.add_argument("--cache", default=str(R.DEFAULT_CACHE))
     ap.add_argument("--work", default="j1_out")
+    ap.add_argument("--low", type=float, default=0.84, help="표시할 유사도 구간 아래 끝 (기본 0.84)")
+    ap.add_argument("--high", type=float, default=0.96, help="표시할 유사도 구간 위 끝 (기본 0.96)")
     args = ap.parse_args(argv)
 
     photos, _, failed = R.photos_from_folder(args.album)
@@ -261,6 +264,9 @@ def main(argv=None):
         if (x.t is not None and y.t is not None and y.t - x.t <= CANDIDATE_GAP_SEC
                 and R.day_of(x, a.params) == R.day_of(y, a.params)):
             cand.append([i, i + 1])
+    total = len(cand)
+    # 확실한 쌍(아주 비슷하거나 확실히 다른 쌍)은 빼고, 판단이 필요한 구간만 보여줍니다
+    cand = [[i, j] for i, j in cand if args.low <= sim[i][j] < args.high]
 
     out = album_out_dir(args.work, args.album)
     out.mkdir(parents=True, exist_ok=True)
@@ -271,10 +277,12 @@ def main(argv=None):
                 .replace("__PHOTOS__", _js(data))
                 .replace("__SIM__", _js(np.round(sim, 4).tolist()))
                 .replace("__CAND__", _js(cand))
-                .replace("__META__", _js({"id": out.name, "rule_version": a.rule_version})))
+                .replace("__META__", _js({"id": out.name, "rule_version": a.rule_version,
+                                           "low": args.low, "high": args.high, "total": total})))
     path = out / "pairs.html"
     path.write_text(page, encoding="utf-8")
-    print(f"사진 {len(a.items)}장, 연속 사진 후보 {len(cand)}쌍, 기준값 {a.params['clip_sim']}")
+    print(f"사진 {len(a.items)}장, 연속 사진 쌍 {total}개 중 유사도 {args.low}~{args.high} 구간 {len(cand)}쌍을 표시, "
+          f"기준값 {a.params['clip_sim']}")
     print(f"기준값 점검 페이지: {path.resolve()}")
 
 
