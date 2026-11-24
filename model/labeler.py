@@ -60,29 +60,34 @@ h2{font-size:15px;margin:18px 0 8px}
 .card.picked .star{background:var(--pick);border-color:var(--pick);color:#000}
 .card.member{opacity:.92;outline:2px dashed var(--line);outline-offset:-2px}
 .more{width:100%;margin-top:4px;font-size:12px;padding:2px 4px}
-</style></head><body>
+body.simple .adv{display:none !important}
+.card img{cursor:default}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--accent);color:#fff;padding:8px 14px;border-radius:8px;display:none;z-index:9}
+.over b{color:#dc2626}
+</style></head><body class="simple">
 <header>
   <div class="bar">
     <strong>__ALBUM__</strong>
-    <span class="stat">★ <b id="nPick">0</b>/__K__장</span>
-    <span class="stat">중요 장면 <b id="nScene">0</b>개 · 인정 컷 <b id="nCut">0</b>장</span>
+    <span class="stat" id="pickStat">★ <b id="nPick">0</b>/__K__장</span>
+    <button class="primary" id="save">저장</button>
     <span class="stat" id="shown"></span>
-    <button id="addScene">+ 새 장면</button>
-    <button class="primary" id="save">owner.csv 저장</button>
-    <label class="btn">불러오기<input type="file" id="load" accept=".csv,text/csv" hidden></label>
+    <button class="adv" id="advToggle" hidden>고급</button>
+    <span class="stat adv">중요 장면 <b id="nScene">0</b>개 · 인정 컷 <b id="nCut">0</b>장</span>
+    <button class="adv" id="addScene">+ 새 장면</button>
+    <label class="btn adv">불러오기<input type="file" id="load" accept=".csv,text/csv" hidden></label>
   </div>
-  <div class="scenes" id="scenes"></div>
-  <div class="edit" id="edit"></div>
+  <div class="scenes adv" id="scenes"></div>
+  <div class="edit adv" id="edit"></div>
 </header>
+<div id="toast"></div>
 <main>
-<details class="help" open><summary><b>표시 순서</b> (촬영 시각 순서입니다. 이 화면에는 알고리즘 결과가 없습니다.)</summary>
+<details class="help" open><summary><b>하는 법</b></summary>
 <ol>
-<li>이 여행에 못 온 친한 친구에게 보여줄 __K__장에 ★를 누르세요. 사진을 눌러도 됩니다. <b>★를 누르면 그 사진의 장면이 자동으로 만들어지고 선택됩니다.</b></li>
-<li><b>거의 똑같은 연사는 한 장으로 접혀 있습니다</b>('+3 펼치기'). 접힌 사진에 ★를 누르면 묶음 전체가 그 장면의 인정 컷이 됩니다. 묶음 안의 다른 컷을 고르려면 펼쳐서 고르세요.</li>
-<li>그 밖에 <b>대신 보여줘도 괜찮은 비슷한 컷</b>이 보이면 '넣기'를 누르세요(선택).</li>
-<li>★는 아니지만 꼭 들어가야 할 장면이 더 있으면 [+ 새 장면]으로 만들 수 있습니다(선택).</li>
-<li>[owner.csv 저장]을 눌러 파일을 보내 주세요. 전체 10분 정도면 됩니다. 표시 내용은 이 브라우저에 자동 저장됩니다.</li>
-</ol></details>
+<li>이 여행에 못 온 친한 친구에게 보여줄 사진 __K__장을 골라 <b>★ 버튼</b>을 누르세요. 다시 누르면 취소됩니다.</li>
+<li>'+3 펼치기'가 붙은 사진은 거의 같은 연사를 한 장으로 접어 둔 것입니다. 묶음 안의 다른 컷이 더 좋으면 펼쳐서 그 컷에 ★를 누르세요.</li>
+<li>__K__장을 다 고르면 <b>[저장]</b>을 누르고, 내려받은 파일을 보내 주세요. 고른 내용은 이 브라우저에 자동 저장됩니다.</li>
+</ol>
+<p class="cap">사진 순서는 촬영 시각 순서이고, 이 화면에는 추천 결과가 없습니다.</p></details>
 <div id="list"></div>
 </main>
 <script>
@@ -157,7 +162,8 @@ function importCsv(text) {
 }
 
 function counts() {
-  nPick.textContent = picks.size; nScene.textContent = scenes.length; nCut.textContent = Object.keys(sceneOf).length;
+  nPick.textContent = picks.size;
+  document.getElementById("pickStat").classList.toggle("over", picks.size > ALBUM.k); nScene.textContent = scenes.length; nCut.textContent = Object.keys(sceneOf).length;
 }
 
 function renderBar() {
@@ -194,7 +200,7 @@ function renderBarChipsOnly() {
 function renderTags() {
   document.querySelectorAll(".card").forEach(card => {
     const p = PHOTOS[+card.dataset.i], id = sceneOf[p.r], s = sceneById(id);
-    card.style.borderTopColor = s ? `hsl(${hue(id)} 70% 50%)` : "transparent";
+    card.style.borderTopColor = s && !document.body.classList.contains("simple") ? `hsl(${hue(id)} 70% 50%)` : "transparent";
     card.querySelector(".tag").textContent = s ? label(s) : "";
     const b = card.querySelector(".scn");
     if (s) { b.textContent = "장면에서 빼기"; b.disabled = false; }
@@ -227,6 +233,7 @@ function renderList() {
           if (active === id) active = scenes.length ? scenes[scenes.length - 1].id : null;
         }
       } else {
+        if (picks.size >= ALBUM.k) { toast(`★는 ${ALBUM.k}장까지예요. 먼저 하나를 빼 주세요.`); return; }
         picks.add(p.r);
         // ★를 누르면 그 사진의 장면을 자동으로 만들고 선택 -> 비슷한 컷은 '넣기'만 누르면 됨
         if (!sceneOf[p.r]) {
@@ -237,15 +244,14 @@ function renderList() {
       }
       card.classList.toggle("picked", picks.has(p.r)); persist(); renderBar(); renderTags(); renderBarChipsOnly(); counts();
     };
-    img.onclick = togglePick;
     const star = el("button", "star", "★ " + ALBUM.k + "장"); star.type = "button"; star.onclick = togglePick;
-    const scn = el("button", "scn"); scn.type = "button";
+    const scn = el("button", "scn adv"); scn.type = "button";
     scn.onclick = () => {
       if (sceneOf[p.r]) delete sceneOf[p.r]; else if (sceneById(active)) sceneOf[p.r] = active;
       persist(); renderTags(); renderBarChipsOnly(); counts();
     };
     const acts = el("div", "acts"); acts.append(star, scn);
-    card.append(img, el("div", "cap", (p.t || "촬영 시각 미상") + " · " + p.r), el("div", "tag"), acts);
+    card.append(img, el("div", "cap", (p.t || "촬영 시각 미상") + " · " + p.r), el("div", "tag adv"), acts);
     if (p.n > 1 && p.lead) {
       const more = el("button", "more", expanded.has(p.g) ? "접기" : `+${p.n - 1} 펼치기 (거의 같은 연사)`); more.type = "button";
       more.onclick = () => {
@@ -262,6 +268,13 @@ function renderList() {
 }
 
 function renderAll() { renderBar(); renderTags(); counts(); }
+let toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.display = "none"; }, 2500);
+}
+// 장면·인정 컷 편집 화면은 주소 끝에 #advanced를 붙여 열 때만 보입니다 (평소에는 숨김)
+if (location.hash === "#advanced") document.body.classList.remove("simple");
 
 document.getElementById("addScene").onclick = () => {
   const s = {id: nextId++, name: ""}; scenes.push(s); active = s.id; persist(); renderAll();
@@ -271,7 +284,6 @@ document.getElementById("addScene").onclick = () => {
 document.getElementById("save").onclick = () => {
   const {rows, orphan} = buildRows();
   if (picks.size !== ALBUM.k && !confirm(`★가 ${picks.size}장입니다. 그래도 저장할까요?`)) return;
-  if (orphan && !confirm(`장면에 넣지 않은 ★ 사진 ${orphan}장은 각각 별도 장면으로 저장됩니다. 계속할까요?`)) return;
   const a = el("a");
   a.href = URL.createObjectURL(new Blob([toCsv(rows)], {type: "text/csv"}));
   a.download = "owner_" + ALBUM.file + ".csv";
