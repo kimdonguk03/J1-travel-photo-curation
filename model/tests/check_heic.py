@@ -1,6 +1,6 @@
 """HEIC(아이폰 원본) 읽기 점검. pillow-heif가 설치돼 있어야 합니다.
 
-  py tests/check_heic.py 작업폴더 사진.jpg [--album JPEG앨범폴더]
+  py tests/check_heic.py work_dir photo.jpg [--album jpeg_album_dir]
 
   1. EXIF 촬영 시각·시간대를 HEIC에서도 JPEG와 같게 읽는지
   2. 회전 정보(세로 사진)가 JPEG와 똑같이 한 번만 적용되는지

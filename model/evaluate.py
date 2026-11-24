@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """평가 앨범에서 각 방식의 초안이 앨범 주인의 owner.csv를 얼마나 담았는지 계산합니다.
 
-  py evaluate.py "C:\\Photos\\제주" owner_제주.csv "C:\\Photos\\부산" owner_부산.csv --params params.json
+  py evaluate.py "C:\\Photos\\jeju_trip" owner_jeju.csv "C:\\Photos\\busan_trip" owner_busan.csv --params params.json
 
 앨범 폴더와 owner.csv를 짝지어 여러 개 넣을 수 있습니다. 개발(튜닝)에 쓴 앨범은 넣지 마세요.
 

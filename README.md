@@ -71,7 +71,7 @@ frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLi
 ```powershell
 cd model
 py -m pip install numpy Pillow pillow-heif onnxruntime huggingface-hub
-py recommend.py --folder "C:\Photos\테스트앨범" --out result.json
+py recommend.py --folder "C:\Photos\test_album" --out result.json
 py tests/test_rules.py
 ```
 

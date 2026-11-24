@@ -80,7 +80,7 @@ result = recommend(photos, k, cache_dir=r"C:\j1_data\cache")   # k = min(10, N)
 `model/` 폴더에서 실행합니다.
 
 ```powershell
-py recommend.py --folder "C:\Photos\테스트앨범" --out result.json
+py recommend.py --folder "C:\Photos\test_album" --out result.json
 py recommend.py photos.json --out result.json
 ```
 

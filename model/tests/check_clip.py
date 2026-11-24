@@ -1,6 +1,6 @@
 """실제 CLIP 모델 점검: 유사도 분포, 처리 시간, 묶기.
 
-  py tests/check_clip.py 작업폴더 사진1.jpg 사진2.png ... [--clip-model 경로]
+  py tests/check_clip.py work_dir photo1.jpg photo2.png ... [--clip-model 경로]
 
 서로 다른 장면의 원본 사진 여러 장(6장 이상 권장)을 넣으면 세 가지를 확인합니다.
   1. 유사도 분포: 합성 연사(1~3% 이동, 밝기 변화, 재압축) / 합성 재촬영(70~85% 영역) / 서로 다른 사진

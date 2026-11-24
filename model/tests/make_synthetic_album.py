@@ -1,7 +1,7 @@
 """테스트용 가짜 여행 앨범과 owner.csv를 만듭니다. 실제 사진 품질 평가용이 아닙니다.
 
-  py tests/make_synthetic_album.py 출력폴더
-  -> 출력폴더/album (사진), 출력폴더/owner.csv (정답)
+  py tests/make_synthetic_album.py out_dir
+  -> out_dir/album (사진), out_dir/owner.csv (정답)
 """
 import csv
 import datetime as dt

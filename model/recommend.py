@@ -10,7 +10,7 @@
     #         draft_ids는 촬영순(미상은 끝)이며 중복 없이 정확히 k장
 
 명령줄 (React 없이 확인):
-    py recommend.py --folder "C:\\Photos\\여행"        # 폴더를 읽어 photo_id = 상대 경로로 실행
+    py recommend.py --folder "C:\\Photos\\trip"        # 폴더를 읽어 photo_id = 상대 경로로 실행
     py recommend.py photos.json --out result.json      # 사진 목록 JSON으로 실행
 
 규칙 (값은 DEFAULT_PARAMS, params.json으로 바꿀 수 있음)

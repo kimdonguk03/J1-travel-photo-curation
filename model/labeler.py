@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """앨범 주인이 owner.csv를 만드는 페이지를 생성합니다.
 
-  py labeler.py "C:\\Photos\\제주" --album-id jeju
+  py labeler.py "C:\\Photos\\jeju_trip" --album-id jeju
 
 만들어진 label_*.html을 크롬이나 엣지로 열어 앨범 주인이 직접 표시합니다.
   1) 여행에 못 온 친구에게 보여줄 10장에 ★  -> owner_pick = 1

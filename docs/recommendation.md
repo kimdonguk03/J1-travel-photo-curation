@@ -44,7 +44,7 @@ K는 min(10, 유효 사진 수)이고, 초안은 서로 다른 K장입니다. �
 ### 개발 앨범 점검
 
 ```powershell
-py curation.py "C:\Photos\개발앨범"
+py curation.py "C:\Photos\dev_album"
 ```
 
 - 모델 로딩, 원본 디코딩, CLIP 추론 시간을 따로 출력합니다.
@@ -55,7 +55,7 @@ py curation.py "C:\Photos\개발앨범"
 ### 기준값 점검
 
 ```powershell
-py pair_check.py "C:\Photos\개발앨범"
+py pair_check.py "C:\Photos\dev_album"
 ```
 
 `pairs.html`에서 사진 쌍을 직접 표시하면, 현재 기준값이 두 경우를 얼마나 잘 가르는지 계산합니다.
@@ -75,7 +75,7 @@ py pair_check.py "C:\Photos\개발앨범"
 ### 정답 수집
 
 ```powershell
-py labeler.py "C:\Photos\평가앨범" --album-id jeju
+py labeler.py "C:\Photos\jeju_trip" --album-id jeju
 ```
 
 앨범 주인이 `label_*.html`에서 직접 표시합니다. 이 페이지에는 추천 결과가 없으며, 정답은 추천을 보여주기 전에 받습니다.
@@ -94,7 +94,7 @@ py labeler.py "C:\Photos\평가앨범" --album-id jeju
 ### 평가
 
 ```powershell
-py evaluate.py "C:\Photos\제주" owner_jeju.csv "C:\Photos\부산" owner_busan.csv --params params.json
+py evaluate.py "C:\Photos\jeju_trip" owner_jeju.csv "C:\Photos\busan_trip" owner_busan.csv --params params.json
 ```
 
 | 방식 | 내용 |
@@ -115,8 +115,8 @@ py evaluate.py "C:\Photos\제주" owner_jeju.csv "C:\Photos\부산" owner_busan.
 
 ```powershell
 py tests/test_rules.py                       # 규칙 단위 테스트
-py tests/check_clip.py 작업폴더 사진들...     # CLIP 유사도 분포, 처리 시간
-py tests/check_heic.py 작업폴더 사진.jpg      # HEIC 촬영 시각·회전 (pillow-heif 필요)
+py tests/check_clip.py work_dir photos...     # CLIP 유사도 분포, 처리 시간
+py tests/check_heic.py work_dir photo.jpg      # HEIC 촬영 시각·회전 (pillow-heif 필요)
 ```
 
 ## 알려진 한계

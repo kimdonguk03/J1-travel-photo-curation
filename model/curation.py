@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """개발 앨범 점검 화면: 묶음, 기준값 근처 경계 사례, 방식별 초안, 처리 시간.
 
-  py curation.py "C:\\Photos\\개발30장"
-  py curation.py "C:\\Photos\\개발30장" --embedder tiny     # 모델 없이 흐름만 (보고용 아님)
+  py curation.py "C:\\Photos\\dev_album"
+  py curation.py "C:\\Photos\\dev_album" --embedder tiny     # 모델 없이 흐름만 (보고용 아님)
 
-결과는 j1_out\\<앨범>_<해시>\\ 에 저장합니다. 원본 폴더에는 아무것도 쓰지 않습니다.
+결과는 j1_out\\<album>_<hash>\\ 에 저장합니다. 원본 폴더에는 아무것도 쓰지 않습니다.
   clusters.html          시간 구간·묶음·대표 컷 순위와 '0.92 근처' 경계 사례. 실제 연사가 갈라졌는지,
                          같은 장소의 다른 장면이 합쳐졌는지를 여기서 봅니다.
   compare.html           방식별 초안 (균등 추출 / 시간 묶기 / 시간+CLIP / 무작위)
@@ -45,8 +45,9 @@ figcaption{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.35;w
 
 
 def album_out_dir(work, root):
+    """결과 폴더 이름: 앨범 폴더 이름의 영문·숫자 부분 + 경로 해시. 한글 이름이면 album_<hash>가 됩니다."""
     root = Path(root).resolve()
-    base = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", root.name) or "album"
+    base = re.sub(r"[^A-Za-z0-9_-]+", "_", root.name).strip("_") or "album"
     return Path(work) / f"{base}_{hashlib.sha1(str(root).encode('utf-8')).hexdigest()[:6]}"
 
 
