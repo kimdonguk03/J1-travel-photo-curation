@@ -60,12 +60,14 @@ DEFAULT_PARAMS = {
     "lambda": 0.5,          # MMR: (1-λ) x 크기 점수 - λ x 중복도
     "size_cap": 5,          # 크기 점수 = min(사진 수, size_cap) / size_cap
     "day_start_hour": 0,    # 날짜 경계 시각 (0 = 자정)
-    "content_weight": 0.5,  # 관련도 = (1-w) x 크기 점수 + w x 내용 점수 (0이면 r1과 같은 크기 점수만)
+    "size_weight": 1.0,     # 관련도 = 크기·내용·화질 점수의 가중 평균. 이 셋이 각 점수의 비중입니다
+    "content_weight": 1.0,  #   내용 점수 비중 (0이면 내용 점수를 쓰지 않음)
+    "quality_weight": 1.0,  #   화질 점수 비중 (0이면 선명도는 묶음 안 대표 컷 고르기에만 씀)
     "random_seeds": 200,    # 평가에서 무작위 기준선을 평균 낼 시드 수
 }
-ENGINE_VERSION = "r2"  # 규칙 코드를 바꾸면 올리세요 (r2: 내용 점수 추가)
+ENGINE_VERSION = "r3"  # 규칙 코드를 바꾸면 올리세요 (r2: 내용 점수, r3: 흔들림에 강한 선명도와 화질 점수)
 CONTENT_FILE = Path(__file__).with_name("content_prompts.npz")
-FEATURE_VERSION = 5           # 특징 계산(축소·선명도·CLIP 입력)을 바꾸면 올리세요
+FEATURE_VERSION = 6           # 특징 계산(축소·선명도·CLIP 입력)을 바꾸면 올리세요
 RANK_SIDE = 512               # 대표 컷 순위와 CLIP 입력에 쓰는 정방향 축소본의 긴 변
 DECODE_WORKERS = min(4, os.cpu_count() or 1)
 DEFAULT_CACHE = Path("j1_out") / "cache"
@@ -258,12 +260,17 @@ def _photo_key(path):
 
 
 def sharpness(im):
-    """흑백 라플라시안 분산. 클수록 선명합니다."""
+    """선명도: 흑백 축소본에서 가로·세로·두 대각선 방향 2차 미분의 분산 중 가장 작은 값. 클수록 선명합니다.
+
+    손떨림은 흔들린 방향의 디테일만 지우므로, 네 방향을 합친 라플라시안보다 방향별 최솟값이 흔들림을 잘 잡습니다.
+    """
     g = np.asarray(im.convert("L"), dtype=np.float32)
     if g.shape[0] < 3 or g.shape[1] < 3:
         return 0.0
-    lap = -4 * g[1:-1, 1:-1] + g[:-2, 1:-1] + g[2:, 1:-1] + g[1:-1, :-2] + g[1:-1, 2:]
-    return float(lap.var())
+    c2 = 2 * g[1:-1, 1:-1]
+    d = (g[1:-1, :-2] + g[1:-1, 2:] - c2, g[:-2, 1:-1] + g[2:, 1:-1] - c2,
+         g[:-2, :-2] + g[2:, 2:] - c2, g[:-2, 2:] + g[2:, :-2] - c2)
+    return float(min(x.var() for x in d))
 
 
 def work_image_path(cache_dir, key):
@@ -443,17 +450,31 @@ def content_scores(emb):
 
 
 def rank_groups(groups, sharp, content=None):
-    """묶음 안 순위: 내용 점수 내림차순(없으면 생략), 그다음 선명도 내림차순, 촬영순."""
+    """묶음 안 순위: 선명도 내림차순, 같으면 내용 점수 내림차순(없으면 생략), 그다음 촬영순.
+
+    같은 묶음은 거의 같은 장면이라 선명도 차이는 대부분 흔들림·초점 차이입니다.
+    """
     if content is None:
         return [sorted(g, key=lambda i: (-sharp[i], i)) for g in groups]
-    return [sorted(g, key=lambda i: (-content[i], -sharp[i], i)) for g in groups]
+    return [sorted(g, key=lambda i: (-sharp[i], -content[i], i)) for g in groups]
+
+
+def quality_scores(sharp):
+    """화질 점수: 선명도의 앨범 안 백분위(0~1). 사진이 1장이면 1."""
+    n = len(sharp)
+    if n < 2:
+        return np.ones(n)
+    order = np.argsort(np.asarray(sharp), kind="stable")
+    q = np.empty(n)
+    q[order] = np.arange(n) / (n - 1)
+    return q
 
 
 # ---------------------------------------------------------------------------
 # 고르기
 # ---------------------------------------------------------------------------
-def select_draft(items, groups, ranked, emb, k, params, content=None):
-    """초안 K장의 인덱스(촬영순). content가 있으면 관련도에 내용 점수를 섞습니다."""
+def select_draft(items, groups, ranked, emb, k, params, content=None, quality=None):
+    """초안 K장의 인덱스(촬영순). content·quality가 있으면 관련도에 내용·화질 점수를 섞습니다."""
     n_groups = len(groups)
     if n_groups < k:  # 묶음이 K개 미만: 모든 대표 컷 뒤에 2위, 3위를 첫 컷 촬영순으로 돌아가며
         order = sorted(range(n_groups), key=lambda g: groups[g][0])
@@ -470,12 +491,14 @@ def select_draft(items, groups, ranked, emb, k, params, content=None):
     lam, cap = params["lambda"], params["size_cap"]
     reps = [r[0] for r in ranked]
     size = [min(len(g), cap) / cap for g in groups]
-    w = params.get("content_weight", 0.0) if content is not None else 0.0
-    if w:
+    parts = [(params.get("size_weight", 1.0), size)]  # 관련도 = 가중 평균 (점수는 모두 0~1)
+    if content is not None and params.get("content_weight", 0.0):
         cn = (content - content.min()) / (content.max() - content.min() + 1e-9)  # 앨범 안 0~1
-        rel = [(1 - w) * size[n] + w * float(cn[reps[n]]) for n in range(n_groups)]
-    else:
-        rel = size
+        parts.append((params["content_weight"], [float(cn[r]) for r in reps]))
+    if quality is not None and params.get("quality_weight", 0.0):
+        parts.append((params["quality_weight"], [float(quality[r]) for r in reps]))
+    total = sum(w for w, _ in parts)
+    rel = [sum(w * v[n] for w, v in parts) / total for n in range(n_groups)] if total else [0.0] * n_groups
     bucket = [day_of(items[g[0]], params) for g in groups]  # None = 촬영 시각 미상
     photo_count = Counter(day_of(it, params) for it in items)
     alive = set(range(n_groups))
@@ -527,6 +550,7 @@ class Analysis:
         self.failed, self.timing, self.embedder_name = failed, timing, embedder_name
         self.rule_version = rule_version(params, embedder_name)
         self.content = content_scores(emb) if params.get("content_weight", 0.0) else None
+        self.quality = quality_scores(sharp) if params.get("quality_weight", 0.0) else None
         self._groups = {}
 
     def groups(self, kind="time_clip"):
@@ -554,7 +578,7 @@ class Analysis:
         if method not in NEEDS_EMBEDDING:
             raise ValueError(f"모르는 방식: {method}")
         groups, ranked, _ = self.groups(method)
-        return select_draft(self.items, groups, ranked, self.emb, k, self.params, self.content)
+        return select_draft(self.items, groups, ranked, self.emb, k, self.params, self.content, self.quality)
 
     def clusters_json(self, kind="time_clip"):
         _, ranked, _ = self.groups(kind)

@@ -184,7 +184,7 @@ def test_features_independent_of_batch_size():
         assert np.allclose(s1, s2) and np.allclose(e1, e2)
 
 
-# --- 내용 점수 (r2) ------------------------------------------------------------
+# --- 내용 점수 ----------------------------------------------------------------
 def _prompt_vec(name):
     names, vecs, _ = R.load_content_prompts()
     return vecs[names.index(name)]
@@ -208,8 +208,60 @@ def test_content_score_changes_pick():
     assert R.select_draft(items, groups, R.rank_groups(groups, np.zeros(2)), emb, 1, p0, None) == [0]
 
 
-def test_rank_within_group_by_content_then_sharpness():
-    assert R.rank_groups([[0, 1, 2]], np.array([5.0, 1.0, 9.0]), np.array([0.1, 0.9, 0.1])) == [[1, 2, 0]]
+def test_rank_within_group_by_sharpness_then_content():
+    assert R.rank_groups([[0, 1, 2]], np.array([5.0, 1.0, 9.0]), np.array([0.1, 0.9, 0.1])) == [[2, 0, 1]]
+    assert R.rank_groups([[0, 1, 2]], np.array([5.0, 5.0, 1.0]), np.array([0.1, 0.9, 0.5])) == [[1, 0, 2]]
+
+
+# --- 화질 점수 (r3) ------------------------------------------------------------
+def _texture(seed=0, side=128):
+    return Image.fromarray(np.random.default_rng(seed).integers(0, 256, (side, side), dtype=np.uint8)).convert("RGB")
+
+
+def _shake(im, n=9, axis=1):
+    """한 방향으로 n픽셀 흔들린 사진 (평균 필터)."""
+    a = np.asarray(im, dtype=np.float32)
+    return Image.fromarray((sum(np.roll(a, k - n // 2, axis=axis) for k in range(n)) / n).astype(np.uint8))
+
+
+def _laplacian_var(im):
+    g = np.asarray(im.convert("L"), dtype=np.float32)
+    return float((-4 * g[1:-1, 1:-1] + g[:-2, 1:-1] + g[2:, 1:-1] + g[1:-1, :-2] + g[1:-1, 2:]).var())
+
+
+def test_sharpness_catches_one_direction_shake():
+    """한 방향으로만 흔들려도 선명도가 크게 떨어지고, 네 방향을 합친 라플라시안(r2까지)보다 더 크게 떨어진다."""
+    rows = np.tile(((np.arange(128) % 4 < 2) * 255).astype(np.uint8)[:, None], (1, 128))  # 가로 줄무늬
+    for axis, stripes in ((1, rows), (0, rows.T)):  # 줄무늬와 같은 방향으로 흔들림: 줄무늬는 남고 디테일만 사라짐
+        im = Image.blend(_texture(), Image.fromarray(stripes).convert("RGB"), 0.5)
+        shaken = _shake(im, axis=axis)
+        new, old = R.sharpness(shaken) / R.sharpness(im), _laplacian_var(shaken) / _laplacian_var(im)
+        assert new < 0.1 and new < old, (axis, new, old)
+
+
+def test_quality_scores_are_album_percentiles():
+    assert np.allclose(R.quality_scores(np.array([30.0, 10.0, 20.0])), [1.0, 0.0, 0.5])
+    assert np.allclose(R.quality_scores(np.array([7.0])), [1.0])
+
+
+def test_quality_weight_prefers_sharper_scene():
+    """같은 날 크기·내용이 같은 두 장면 중 화질 점수가 높은(선명한) 쪽. 화질 비중 0이면 촬영순."""
+    items = items_at([0, 3600])
+    emb = np.stack([unit(0), unit(90)])
+    groups, _ = R.build_groups(items, emb, P)
+    sharp = np.array([10.0, 50.0])
+    ranked = R.rank_groups(groups, sharp)
+    q = R.quality_scores(sharp)
+    assert R.select_draft(items, groups, ranked, emb, 1, P, None, q) == [1]
+    assert R.select_draft(items, groups, ranked, emb, 1, dict(P, quality_weight=0.0), None, q) == [0]
+
+
+def test_analysis_uses_quality_only_when_weighted():
+    items = items_at([0, 3600, 7200])
+    emb = np.stack([unit(0), unit(60), unit(120)])
+    sharp = np.array([1.0, 2.0, 3.0])
+    assert R.Analysis(items, sharp, emb, P, [], {}, "t").quality is not None
+    assert R.Analysis(items, sharp, emb, dict(P, quality_weight=0.0), [], {}, "t").quality is None
 
 
 def test_content_skipped_when_dimension_differs():
@@ -229,6 +281,19 @@ def test_owner_csv_scoring():
     r = E.score_draft(["b.jpg", "d/e.jpg", "x.jpg"], owner)
     assert (r["scene_hits"], r["scenes"], r["matched"], r["picks"]) == (2, 3, 0, 2)
     assert r["missed"] == ["S02_저녁"]
+
+
+def test_moment_hits_same_photo_or_near_and_similar():
+    """주인이 고른 사진마다: 초안에 같은 사진이 있거나, 10분 안에 찍은 유사도 0.80 이상 사진이 있으면 적중."""
+    items = items_at([0, 300, 1000, 4000])
+    items[3] = R.Item("u000", "zz.png", Path("x"), None, None)  # 촬영 시각 미상
+    emb = np.stack([unit(0), unit(20), unit(5), unit(0)])  # cos(20도)=0.94, cos(5도)=0.996
+    a = R.Analysis(items, np.ones(4), emb, P, [], {}, "t")
+    owner = E.Owner({"x"}, {}, {"IMG_000.jpg", "IMG_002.jpg", "zz.png"})
+    assert E.moment_hits(a, [1], owner) == 1   # 0번: 5분 차이, 0.94 -> 적중 / 2번: 10분 초과
+    assert E.moment_hits(a, [2], owner) == 1   # 2번 자기 자신만 (0번과는 15분 차이)
+    assert E.moment_hits(a, [3], owner) == 1   # 시각 미상은 같은 사진일 때만
+    assert E.moment_hits(a, [1], owner, sim=0.95) == 0
 
 
 if __name__ == "__main__":
