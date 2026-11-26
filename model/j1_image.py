@@ -27,6 +27,10 @@ try:  # 아이폰 원본(HEIC)
 except ImportError:
     HEIF_OK = False
 
+# 파노라마처럼 아주 큰 휴대폰 사진도 읽도록 Pillow의 기본 한도(약 8,900만 화소)를 늘립니다.
+# 사용자 본인의 사진만 읽으므로 4억 화소까지 허용합니다.
+Image.MAX_IMAGE_PIXELS = 400_000_000
+
 PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp"}
 VIDEO_EXTS = {".mov", ".mp4"}
 THUMB_SIDE = 512     # 목록 썸네일 긴 변
