@@ -256,12 +256,68 @@ def test_quality_weight_prefers_sharper_scene():
     assert R.select_draft(items, groups, ranked, emb, 1, dict(P, quality_weight=0.0), None, q) == [0]
 
 
+def test_aesthetic_head_loads_and_scores():
+    """LAION 선형층: 512차원 가중치, 정규화한 벡터에 씌우면 대략 1~10 범위."""
+    w, b = R.load_aesthetic_head()
+    assert w.shape == (512,)
+    q = R.aesthetic_scores(rand_unit(20, dim=512, seed=3).astype(np.float32))
+    assert q.shape == (20,) and np.all((q > 0) & (q < 10))
+    assert R.aesthetic_scores(rand_unit(5, dim=64)) is None
+
+
+def test_aesthetic_weight_prefers_prettier_scene():
+    """같은 날 크기가 같은 두 장면 중 미적 점수가 높은 쪽. 미적 비중 0이면 촬영순."""
+    items = items_at([0, 3600])
+    emb = np.stack([unit(0), unit(90)])
+    groups, _ = R.build_groups(items, emb, P)
+    ranked = R.rank_groups(groups, np.zeros(2))
+    aes = R.quality_scores(np.array([4.0, 6.0]))
+    assert R.select_draft(items, groups, ranked, emb, 1, P, None, None, aes) == [1]
+    assert R.select_draft(items, groups, ranked, emb, 1, dict(P, aesthetic_weight=0.0), None, None, aes) == [0]
+
+
+def test_rank_model_orders_group_by_learned_score():
+    """rank_model을 켜면 묶음 안 대표 컷을 학습한 점수로 고른다. 기본(sharpness)은 선명도 순."""
+    items = items_at([0, 2, 4])
+    emb = rand_unit(3, dim=512, seed=5).astype(np.float32)
+    sharp = np.array([30.0, 20.0, 10.0])
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "triage_ranker.npz"
+        # small 모델: 선명도를 음수로 보는 가짜 가중치 -> 가장 흐린 컷이 1등
+        np.savez(f, small_scale=np.ones(3), small_w=np.array([-1.0, 0.0, 0.0]), small_lam=np.array(1.0))
+        old_file, R.RANKER_FILE = R.RANKER_FILE, f
+        R._RANKER.clear()
+        try:
+            a = R.Analysis(items, sharp, emb, dict(P, rank_model="small"), [], {}, "t")
+            assert R.rank_groups([[0, 1, 2]], sharp, None, a.rank_score) == [[2, 1, 0]]
+            assert "r4/" in a.rule_version and a.rule_version != R.Analysis(items, sharp, emb, P, [], {}, "t").rule_version
+        finally:
+            R.RANKER_FILE = old_file
+            R._RANKER.clear()
+    assert R.Analysis(items, sharp, emb, P, [], {}, "t").rank_score is None
+    assert R.rank_groups([[0, 1, 2]], sharp) == [[0, 1, 2]]
+
+
+def test_rank_model_missing_file_is_clear_error():
+    old_file, R.RANKER_FILE = R.RANKER_FILE, Path("no_such_ranker.npz")
+    R._RANKER.clear()
+    try:
+        R.Analysis(items_at([0]), np.ones(1), rand_unit(1, dim=512).astype(np.float32), dict(P, rank_model="clip"), [], {}, "t")
+        raise AssertionError("ValueError가 나야 합니다")
+    except ValueError as e:
+        assert "triage_eval.py" in str(e)
+    finally:
+        R.RANKER_FILE = old_file
+        R._RANKER.clear()
+
+
 def test_analysis_uses_quality_only_when_weighted():
     items = items_at([0, 3600, 7200])
     emb = np.stack([unit(0), unit(60), unit(120)])
     sharp = np.array([1.0, 2.0, 3.0])
     assert R.Analysis(items, sharp, emb, P, [], {}, "t").quality is not None
     assert R.Analysis(items, sharp, emb, dict(P, quality_weight=0.0), [], {}, "t").quality is None
+    assert R.Analysis(items, sharp, emb, dict(P, aesthetic_weight=0.0), [], {}, "t").aesthetic is None
 
 
 def test_content_skipped_when_dimension_differs():

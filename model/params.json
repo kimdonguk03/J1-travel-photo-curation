@@ -8,5 +8,7 @@
   "size_weight": 1.0,
   "content_weight": 1.0,
   "quality_weight": 1.0,
+  "aesthetic_weight": 1.0,
+  "rank_model": "sharpness",
   "random_seeds": 200
 }

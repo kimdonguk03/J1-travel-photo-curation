@@ -6,7 +6,7 @@
 
 페이지에는 세 방식의 초안 사진을 섞어서, 어느 방식이 고른 사진인지 모르게 보여줍니다.
   proposal    제안 방식 (params.json 그대로)
-  no_quality  제안 방식에서 화질 점수만 끈 것 (quality_weight=0)
+  no_quality  제안 방식에서 화질·미적 점수를 끈 것 (quality_weight=0, aesthetic_weight=0)
   uniform     촬영 순번 균등 추출 (기준선)
 수용률 = 그 방식의 초안 K장 중 주인이 '건질 사진'으로 표시한 비율.
 흔들림 = 그 방식의 초안 K장 중 주인이 '흔들림·흐림'으로 표시한 장수 (사람이 본 화질 지표).
@@ -105,8 +105,9 @@ render();
 
 
 def drafts(a):
-    """방식별 초안 인덱스. no_quality는 같은 묶음·선택 규칙에서 화질 점수만 끈 것."""
-    nq = R.Analysis(a.items, a.sharp, a.emb, dict(a.params, quality_weight=0.0), a.failed, a.timing, a.embedder_name)
+    """방식별 초안 인덱스. no_quality는 같은 묶음·선택 규칙에서 화질·미적 점수를 끈 것."""
+    nq = R.Analysis(a.items, a.sharp, a.emb, dict(a.params, quality_weight=0.0, aesthetic_weight=0.0),
+                    a.failed, a.timing, a.embedder_name)
     return {"proposal": a.run("time_clip"), "no_quality": nq.run("time_clip"), "uniform": a.run("uniform")}
 
 
@@ -173,7 +174,7 @@ def score(paths):
             f"{statistics.fmean(keep_rate[m]):.2f} · {statistics.fmean(blur_rate[m]):.2f}" for m in METHODS) + " |")
     print()
     print("건질 = '건질 사진' 수 / 초안 수, 흔들림 = '흔들림·흐림' 수. "
-          "proposal=제안, no_quality=화질 점수 끔, uniform=균등 추출")
+          "proposal=제안, no_quality=화질·미적 점수 끔, uniform=균등 추출")
 
 
 def main(argv=None):

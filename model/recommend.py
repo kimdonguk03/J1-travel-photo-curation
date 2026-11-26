@@ -63,10 +63,15 @@ DEFAULT_PARAMS = {
     "size_weight": 1.0,     # 관련도 = 크기·내용·화질 점수의 가중 평균. 이 셋이 각 점수의 비중입니다
     "content_weight": 1.0,  #   내용 점수 비중 (0이면 내용 점수를 쓰지 않음)
     "quality_weight": 1.0,  #   화질 점수 비중 (0이면 선명도는 묶음 안 대표 컷 고르기에만 씀)
+    "aesthetic_weight": 1.0,  # 미적 점수 비중 (LAION 미적 점수 모델, 0이면 쓰지 않음)
+    "rank_model": "sharpness",  # 묶음 안 대표 컷: sharpness(선명도) 또는 triage_ranker.npz의 small·prompts·clip
     "random_seeds": 200,    # 평가에서 무작위 기준선을 평균 낼 시드 수
 }
-ENGINE_VERSION = "r3"  # 규칙 코드를 바꾸면 올리세요 (r2: 내용 점수, r3: 흔들림에 강한 선명도와 화질 점수)
+ENGINE_VERSION = "r4"  # 규칙 코드를 바꾸면 올리세요 (r2: 내용 점수, r3: 흔들림에 강한 선명도와 화질 점수, r4: 미적 점수)
 CONTENT_FILE = Path(__file__).with_name("content_prompts.npz")
+AESTHETIC_FILE = Path(__file__).with_name("aesthetic_vit_b_32.npz")  # LAION-Aesthetics V1 선형층 (MIT)
+RANKER_FILE = Path(__file__).with_name("triage_ranker.npz")  # Photo Triage로 학습한 대표 컷 순위 모델 (triage_eval.py)
+RANK_MODELS = ("small", "prompts", "clip")
 FEATURE_VERSION = 6           # 특징 계산(축소·선명도·CLIP 입력)을 바꾸면 올리세요
 RANK_SIDE = 512               # 대표 컷 순위와 CLIP 입력에 쓰는 정방향 축소본의 긴 변
 DECODE_WORKERS = min(4, os.cpu_count() or 1)
@@ -102,8 +107,15 @@ def rule_version(params, embedder_name):
     rule_params = {k: v for k, v in params.items() if k != "random_seeds"}
     cp = load_content_prompts()
     content = hashlib.sha1(cp[1].tobytes() + cp[2].tobytes()).hexdigest()[:8] if cp else "none"
+    ah = load_aesthetic_head()
+    aes = hashlib.sha1(ah[0].tobytes() + np.float32(ah[1]).tobytes()).hexdigest()[:8] if ah else "none"
+    rk = params.get("rank_model", "sharpness")
+    ranker = "none"
+    if rk != "sharpness":
+        r = load_ranker(rk)
+        ranker = hashlib.sha1(r[0].tobytes() + r[1].tobytes()).hexdigest()[:8]
     blob = json.dumps({"p": rule_params, "e": ENGINE_VERSION, "f": FEATURE_VERSION, "m": embedder_name,
-                       "c": content}, sort_keys=True)
+                       "c": content, "a": aes, "r": ranker}, sort_keys=True)
     return f"{ENGINE_VERSION}/{embedder_name}/{hashlib.sha1(blob.encode()).hexdigest()[:8]}"
 
 
@@ -437,26 +449,98 @@ def load_content_prompts():
     return _CONTENT["v"]
 
 
-def content_scores(emb):
-    """사진별 내용 점수(앨범 안 상대값). 문장 벡터가 없거나 임베딩 차원이 다르면 None."""
+def prompt_z(emb):
+    """문장 15개와의 유사도를 문장마다 앨범 안에서 표준화한 값 (사진 수 x 15). 쓸 수 없으면 None."""
     cp = load_content_prompts()
     if emb is None or cp is None or len(emb) == 0 or emb.shape[1] != cp[1].shape[1]:
         return None
     S = emb @ cp[1].T
     std = S.std(axis=0)
-    Z = (S - S.mean(axis=0)) / np.where(std > 1e-9, std, 1.0)  # 문장마다 앨범 안에서 표준화
-    pos, neg = cp[2] > 0, cp[2] < 0
-    return Z[:, pos].mean(axis=1) - Z[:, neg].mean(axis=1)
+    return (S - S.mean(axis=0)) / np.where(std > 1e-9, std, 1.0)
 
 
-def rank_groups(groups, sharp, content=None):
-    """묶음 안 순위: 선명도 내림차순, 같으면 내용 점수 내림차순(없으면 생략), 그다음 촬영순.
+def content_scores(emb):
+    """사진별 내용 점수(앨범 안 상대값). 문장 벡터가 없거나 임베딩 차원이 다르면 None."""
+    Z = prompt_z(emb)
+    if Z is None:
+        return None
+    signs = load_content_prompts()[2]
+    return Z[:, signs > 0].mean(axis=1) - Z[:, signs < 0].mean(axis=1)
+
+
+def rank_groups(groups, sharp, content=None, score=None):
+    """묶음 안 순위. score(학습한 순위 점수)가 있으면 그 내림차순, 없으면 선명도 내림차순.
+    같으면 내용 점수 내림차순(없으면 생략), 그다음 촬영순.
 
     같은 묶음은 거의 같은 장면이라 선명도 차이는 대부분 흔들림·초점 차이입니다.
     """
+    first = sharp if score is None else score
     if content is None:
-        return [sorted(g, key=lambda i: (-sharp[i], i)) for g in groups]
-    return [sorted(g, key=lambda i: (-sharp[i], -content[i], i)) for g in groups]
+        return [sorted(g, key=lambda i: (-first[i], i)) for g in groups]
+    return [sorted(g, key=lambda i: (-first[i], -content[i], i)) for g in groups]
+
+
+_RANKER = {}
+
+
+def load_ranker(kind):
+    """(scale, w). triage_eval.py --save-ranker로 만든 파일에서 읽습니다. 없으면 ValueError."""
+    if kind not in RANK_MODELS:
+        raise ValueError(f"rank_model은 sharpness 또는 {', '.join(RANK_MODELS)} 중 하나여야 합니다 (받은 값 {kind}).")
+    key = (str(RANKER_FILE), kind)
+    if key not in _RANKER:
+        try:
+            with np.load(RANKER_FILE, allow_pickle=False) as z:
+                _RANKER[key] = (np.array(z[f"{kind}_scale"], np.float64), np.array(z[f"{kind}_w"], np.float64))
+        except (OSError, KeyError) as e:
+            raise ValueError(f"rank_model={kind}에 필요한 {RANKER_FILE.name}이 없거나 {kind} 모델이 없습니다. "
+                             "triage_eval.py --save-ranker로 만든 파일을 model 폴더에 넣으세요.") from e
+    return _RANKER[key]
+
+
+def ranker_features(kind, sharp, emb, aes=None, content=None, z=None):
+    """순위 모델 입력 (사진 수 x 특징 수). triage_eval.py와 같은 함수를 씁니다.
+    small: [log 선명도, 미적, 내용] / prompts: [log 선명도, 미적, 문장 15개] / clip: [log 선명도, 미적, 내용, CLIP 512]"""
+    ls = np.log1p(np.asarray(sharp, np.float64))[:, None]
+    aes = aesthetic_scores(emb) if aes is None else aes
+    aes = np.asarray(aes, np.float64)[:, None]
+    if kind == "prompts":
+        z = prompt_z(emb) if z is None else z
+        return np.hstack([ls, aes, z])
+    content = content_scores(emb) if content is None else content
+    cols = [ls, aes, np.asarray(content, np.float64)[:, None]]
+    if kind == "clip":
+        cols.append(np.asarray(emb, np.float64))
+    return np.hstack(cols)
+
+
+def ranker_scores(kind, sharp, emb):
+    """학습한 순위 점수 (클수록 사람이 더 좋아할 컷)."""
+    scale, w = load_ranker(kind)
+    return (ranker_features(kind, sharp, emb) / scale) @ w
+
+
+_AESTHETIC = {}
+
+
+def load_aesthetic_head():
+    """(가중치 512, 절편) 또는 None. LAION-Aesthetics V1의 ViT-B/32 선형층을 aesthetic_head.py로 변환한 파일입니다."""
+    if "v" not in _AESTHETIC:
+        try:
+            with np.load(AESTHETIC_FILE, allow_pickle=False) as z:
+                _AESTHETIC["v"] = (np.array(z["w"], np.float32), float(np.ravel(z["b"])[0]))
+        except (OSError, KeyError):
+            _AESTHETIC["v"] = None
+    return _AESTHETIC["v"]
+
+
+def aesthetic_scores(emb):
+    """사진별 미적 점수(대략 1~10, 클수록 보기 좋음). 사람이 매긴 미적 점수로 학습된 선형층을 CLIP 벡터에 씌웁니다.
+    가중치 파일이 없거나 임베딩 차원이 다르면 None."""
+    ah = load_aesthetic_head()
+    if emb is None or ah is None or len(emb) == 0 or emb.shape[1] != ah[0].shape[0]:
+        return None
+    return emb @ ah[0] + ah[1]
 
 
 def quality_scores(sharp):
@@ -473,8 +557,9 @@ def quality_scores(sharp):
 # ---------------------------------------------------------------------------
 # 고르기
 # ---------------------------------------------------------------------------
-def select_draft(items, groups, ranked, emb, k, params, content=None, quality=None):
-    """초안 K장의 인덱스(촬영순). content·quality가 있으면 관련도에 내용·화질 점수를 섞습니다."""
+def select_draft(items, groups, ranked, emb, k, params, content=None, quality=None, aesthetic=None):
+    """초안 K장의 인덱스(촬영순). content·quality·aesthetic이 있으면 관련도에 내용·화질·미적 점수를 섞습니다.
+    quality와 aesthetic은 앨범 안 백분위(0~1)입니다."""
     n_groups = len(groups)
     if n_groups < k:  # 묶음이 K개 미만: 모든 대표 컷 뒤에 2위, 3위를 첫 컷 촬영순으로 돌아가며
         order = sorted(range(n_groups), key=lambda g: groups[g][0])
@@ -497,6 +582,8 @@ def select_draft(items, groups, ranked, emb, k, params, content=None, quality=No
         parts.append((params["content_weight"], [float(cn[r]) for r in reps]))
     if quality is not None and params.get("quality_weight", 0.0):
         parts.append((params["quality_weight"], [float(quality[r]) for r in reps]))
+    if aesthetic is not None and params.get("aesthetic_weight", 0.0):
+        parts.append((params["aesthetic_weight"], [float(aesthetic[r]) for r in reps]))
     total = sum(w for w, _ in parts)
     rel = [sum(w * v[n] for w, v in parts) / total for n in range(n_groups)] if total else [0.0] * n_groups
     bucket = [day_of(items[g[0]], params) for g in groups]  # None = 촬영 시각 미상
@@ -551,6 +638,10 @@ class Analysis:
         self.rule_version = rule_version(params, embedder_name)
         self.content = content_scores(emb) if params.get("content_weight", 0.0) else None
         self.quality = quality_scores(sharp) if params.get("quality_weight", 0.0) else None
+        aes = aesthetic_scores(emb) if params.get("aesthetic_weight", 0.0) else None
+        self.aesthetic = quality_scores(aes) if aes is not None else None  # 앨범 안 백분위
+        rk = params.get("rank_model", "sharpness")
+        self.rank_score = None if rk == "sharpness" or emb is None else ranker_scores(rk, sharp, emb)
         self._groups = {}
 
     def groups(self, kind="time_clip"):
@@ -559,7 +650,7 @@ class Analysis:
             if self.emb is None:
                 raise ValueError("묶기에는 임베딩이 필요합니다 (embedder='clip').")
             g, diag = build_groups(self.items, self.emb, self.params, use_clip=(kind == "time_clip"))
-            self._groups[kind] = (g, rank_groups(g, self.sharp, self.content), diag)
+            self._groups[kind] = (g, rank_groups(g, self.sharp, self.content, self.rank_score), diag)
         return self._groups[kind]
 
     def default_k(self):
@@ -578,7 +669,8 @@ class Analysis:
         if method not in NEEDS_EMBEDDING:
             raise ValueError(f"모르는 방식: {method}")
         groups, ranked, _ = self.groups(method)
-        return select_draft(self.items, groups, ranked, self.emb, k, self.params, self.content, self.quality)
+        return select_draft(self.items, groups, ranked, self.emb, k, self.params, self.content, self.quality,
+                            self.aesthetic)
 
     def clusters_json(self, kind="time_clip"):
         _, ranked, _ = self.groups(kind)

@@ -48,7 +48,7 @@ result = recommend(photos, k, cache_dir=r"C:\j1_data\cache")   # k = min(10, N)
 {
   "clusters": [{"cluster_id": "c0001", "photo_ids": ["p0004", "p0001", "p0002"], "representative_id": "p0004"}],
   "draft_ids": ["p0004", "p0013", "..."],
-  "rule_version": "r3/clip_vision_model_quantized/1a2b3c4d"
+  "rule_version": "r4/clip_vision_model_quantized/1a2b3c4d"
 }
 ```
 
