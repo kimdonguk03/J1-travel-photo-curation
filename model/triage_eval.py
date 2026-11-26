@@ -15,6 +15,11 @@ pairlist 열: series photo1 photo2 pref(photo1을 고른 비율) rank1 rank2 (�
   1등 정확도     묶음마다 점수가 가장 높은 사진이 사람 순위 1등인 비율
 비교: 선명도(우리 대표 컷 규칙), 미적 점수, 내용 점수, 그리고 학습한 쌍 비교 로지스틱 회귀.
 학습은 떼어 둔 시험 묶음을 전혀 보지 않습니다 (규제 세기는 train 안에서 다시 나눈 검증 묶음으로 고름).
+
+표준화 통계: 내용 점수와 문장 점수는 문장마다 평균·표준편차로 표준화합니다. 기본(--stats train)은 학습 묶음
+사진만으로 이 통계를 냅니다. 비교를 위해 예전 방식(train_val 사진 전체, 시험 묶음과 공식 val 포함)으로도 같은
+분할·시드에서 다시 학습·평가해 표를 함께 냅니다. --save-ranker는 --stats로 고른 방식의 모델을 저장합니다.
+사람 선호가 정확히 반반(pref=0.5)인 쌍은 정답이 없어 학습과 평가에서 뺍니다.
 """
 from __future__ import annotations
 
@@ -83,16 +88,34 @@ def photo_features(paths, cache, clip_model=None, log=print):
     ok = [i for i in range(len(items)) if i not in failed]
     items, sharp, emb = [items[i] for i in ok], sharp[ok], emb[ok]
     aes = R.aesthetic_scores(emb)
-    content = R.content_scores(emb)
-    Z = R.prompt_z(emb)
-    vecs = {kind: R.ranker_features(kind, sharp, emb, aes, content, Z) for kind in R.RANK_MODELS}  # 추천과 같은 입력
+    S = emb @ R.load_content_prompts()[1].T  # 문장 15개와의 유사도 (표준화 전)
     feats = {}
     for i, it in enumerate(items):
-        feats[it.photo_id] = {"sharp": float(np.log1p(sharp[i])), "aes": float(aes[i]), "content": float(content[i]),
-                              **{f"vec_{kind}": vecs[kind][i] for kind in R.RANK_MODELS}}
+        feats[it.photo_id] = {"sharp_raw": float(sharp[i]), "sharp": float(np.log1p(sharp[i])), "aes": float(aes[i]),
+                              "emb": emb[i], "S": S[i]}
     if failed:
         log(f"디코딩 실패 {len(failed)}장은 뺐습니다.")
     return feats
+
+
+def build_vectors(feats, stat_names):
+    """stat_names 사진들의 문장 유사도 평균·표준편차로 표준화해 내용 점수와 순위 모델 입력(vec_*)을 만듭니다.
+    추천과 같은 함수(R.ranker_features)를 씁니다."""
+    names = sorted(feats)
+    S = np.array([feats[n]["S"] for n in names])
+    ref = np.array([feats[n]["S"] for n in sorted(stat_names) if n in feats])
+    sd = ref.std(axis=0)
+    Z = (S - ref.mean(axis=0)) / np.where(sd > 1e-9, sd, 1.0)
+    signs = R.load_content_prompts()[2]
+    content = Z[:, signs > 0].mean(axis=1) - Z[:, signs < 0].mean(axis=1)
+    sharp = np.array([feats[n]["sharp_raw"] for n in names])
+    emb = np.array([feats[n]["emb"] for n in names])
+    aes = np.array([feats[n]["aes"] for n in names])
+    vecs = {kind: R.ranker_features(kind, sharp, emb, aes, content, Z) for kind in R.RANK_MODELS}
+    for i, n in enumerate(names):
+        feats[n]["content"] = float(content[i])
+        for kind in R.RANK_MODELS:
+            feats[n][f"vec_{kind}"] = vecs[kind][i]
 
 
 SMALL = ["sharp", "aes", "content"]
@@ -202,6 +225,8 @@ def main(argv=None):
     ap.add_argument("--holdout", type=float, default=0.15, help="train에서 시험용으로 떼어 둘 묶음 비율")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", help="결과 CSV")
+    ap.add_argument("--stats", choices=["train", "all"], default="train",
+                    help="표준화 통계를 낼 사진: train(학습 묶음만, 기본) 또는 all(예전 방식). 둘 다 평가하고, 이 값으로 저장 모델을 고릅니다")
     ap.add_argument("--save-ranker", help="학습한 순위 모델 3종(small·prompts·clip)을 저장할 npz. "
                     "model/triage_ranker.npz로 두고 params.json의 rank_model로 고릅니다")
     args = ap.parse_args(argv)
@@ -226,35 +251,48 @@ def main(argv=None):
     rng = np.random.default_rng(args.seed)
     for f in feats.values():
         f["rand"] = rng.random()
-    scorers = {
-        "무작위": lambda f: f["rand"],
-        "선명도 (r4 대표 컷 규칙)": lambda f: f["sharp"],
-        "미적 점수 (LAION)": lambda f: f["aes"],
-        "내용 점수": lambda f: f["content"],
-    }
-    models = {}
-    for kind, label in [("small", "학습: 선명도+미적+내용"), ("prompts", "학습: 선명도+미적+문장 15개"),
-                        ("clip", "학습: 선명도+미적+내용+CLIP 512")]:
-        models[kind] = Learned(kind, train, feats, offset, args.seed)
-        scorers[label] = models[kind].score
+    train_names = {photo_name(s, x, offset) for s, a, b, *_ in train for x in (a, b)}
+    stat_sets = {"train": ("학습 묶음 사진만", train_names), "all": ("train_val 사진 전체 (예전 방식)", set(feats))}
+    order = [args.stats] + [k for k in stat_sets if k != args.stats]
 
-    rows = []
-    for split_name, pairs in [("시험 묶음 (train에서 떼어 둠)", test), ("공식 val", val)]:
-        if not pairs:
-            continue
-        res = evaluate(pairs, feats, offset, scorers)
-        first = next(iter(res.values()))
-        print(f"\n### {split_name}: 쌍 {first[3]}개 (합의 쌍 {first[4]}개), 묶음 {first[5]}개")
-        print("| 방식 | 쌍 정확도 | 합의 쌍 정확도 | 1등 정확도 |")
-        print("|---|---|---|---|")
-        for name, (acc, cacc, top, n, nc, m) in res.items():
-            print(f"| {name} | {acc:.3f} | {cacc:.3f} | {top:.3f} |")
-            rows.append({"split": split_name, "method": name, "pair_acc": round(acc, 4), "confident_acc": round(cacc, 4),
-                         "top1_acc": round(top, 4), "pairs": n, "confident_pairs": nc, "series": m})
+    rows, saved = [], None
+    for mode in order:
+        label_mode, names = stat_sets[mode]
+        build_vectors(feats, names)
+        scorers = {
+            "무작위": lambda f: f["rand"],
+            "선명도 (r3 대표 컷 규칙)": lambda f: f["sharp"],
+            "미적 점수 (LAION)": lambda f: f["aes"],
+            "내용 점수": lambda f: f["content"],
+        }
+        models = {}
+        for kind, label in [("small", "학습: 선명도+미적+내용"), ("prompts", "학습: 선명도+미적+문장 15개"),
+                            ("clip", "학습: 선명도+미적+내용+CLIP 512")]:
+            models[kind] = Learned(kind, train, feats, offset, args.seed)
+            scorers[label] = models[kind].score
+        if saved is None:
+            saved = models
+        print(f"\n## 표준화 통계: {label_mode} (사진 {len(names & set(feats))}장)")
+        for split_name, pairs in [("시험 묶음 (train에서 떼어 둠)", test), ("공식 val", val)]:
+            if not pairs:
+                continue
+            res = evaluate(pairs, feats, offset, scorers)
+            first = next(iter(res.values()))
+            print(f"\n### {split_name}: 쌍 {first[3]}개 (합의 쌍 {first[4]}개), 묶음 {first[5]}개")
+            print("| 방식 | 쌍 정확도 | 합의 쌍 정확도 | 1등 정확도 |")
+            print("|---|---|---|---|")
+            for name, (acc, cacc, top, n, nc, m) in res.items():
+                print(f"| {name} | {acc:.3f} | {cacc:.3f} | {top:.3f} |")
+                rows.append({"stats": mode, "split": split_name, "method": name, "pair_acc": round(acc, 4),
+                             "confident_acc": round(cacc, 4), "top1_acc": round(top, 4), "pairs": n,
+                             "confident_pairs": nc, "series": m})
 
+    models = saved
+    build_vectors(feats, stat_sets[args.stats][1])
     sm = models["small"]
     print("\n작은 학습 모델 가중치 (표준화 후):", {k: round(float(v), 3) for k, v in zip(SMALL, sm.w)}, f"λ={sm.lam}")
     print("참고: 70% 이상 합의 쌍 기준 원 논문 최고 모델(미세 조정한 Siamese VGG) 0.73")
+    print(f"저장·가중치 출력은 표준화 통계 '{args.stats}' 모델입니다. 사람 선호가 반반(pref=0.5)인 쌍은 정답이 없어 뺐습니다.")
     if args.out:
         with open(args.out, "w", encoding="utf-8-sig", newline="") as f:
             w = csv.DictWriter(f, fieldnames=list(rows[0]))

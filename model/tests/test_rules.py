@@ -362,6 +362,19 @@ def test_review_scene_hits_count_distinct_scenes_once():
     assert D.scene_hits([]) == 0
 
 
+def test_review_agreement_between_auto_and_owner():
+    """사진 단위 대조: 같은 장면 / 자동만 / 주인만 / 서로 다른 장면 / 둘 다 없음."""
+    import draft_review as D
+    assert D.agreement({"scene": "S01", "auto_scenes": "S01;S02"}) == "same"
+    assert D.agreement({"scene": "S03", "auto_scenes": "S01"}) == "different"
+    assert D.agreement({"scene": "S01", "auto_scenes": ""}) == "owner_only"
+    assert D.agreement({"scene": "none", "auto_scenes": "S02"}) == "auto_only"
+    assert D.agreement({"scene": "none", "auto_scenes": ""}) == "neither"
+    st = D.method_stats([{"keep": "y", "blur": "y", "scene": "S01", "auto_scenes": "S01"},
+                         {"keep": "n", "blur": "n", "scene": "none", "auto_scenes": "S02"}])
+    assert (st["keep"], st["blur"], st["scenes"], st["auto"], st["same"], st["auto_only"]) == (1, 1, 1, 2, 1, 1)
+
+
 def test_moment_hits_same_photo_or_near_and_similar():
     """주인이 고른 사진마다: 초안에 같은 사진이 있거나, 10분 안에 찍은 유사도 0.80 이상 사진이 있으면 적중."""
     items = items_at([0, 300, 1000, 4000])
