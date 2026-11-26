@@ -5,5 +5,6 @@
   "lambda": 0.5,
   "size_cap": 5,
   "day_start_hour": 0,
+  "content_weight": 0.5,
   "random_seeds": 200
 }

@@ -184,6 +184,38 @@ def test_features_independent_of_batch_size():
         assert np.allclose(s1, s2) and np.allclose(e1, e2)
 
 
+# --- 내용 점수 (r2) ------------------------------------------------------------
+def _prompt_vec(name):
+    names, vecs, _ = R.load_content_prompts()
+    return vecs[names.index(name)]
+
+
+def test_content_scores_prefer_people_over_road():
+    emb = np.stack([_prompt_vec(n) for n in ("group", "landmark", "road", "document")])
+    q = R.content_scores(emb)
+    assert min(q[0], q[1]) > max(q[2], q[3])
+
+
+def test_content_score_changes_pick():
+    """같은 날 크기가 같은 두 묶음 중, 내용 점수가 높은 쪽(단체사진)을 고른다. 끄면 촬영순으로 앞의 도로 사진."""
+    items = items_at([0, 3600])
+    emb = np.stack([_prompt_vec("road"), _prompt_vec("group")])
+    groups, _ = R.build_groups(items, emb, P)
+    content = R.content_scores(emb)
+    ranked = R.rank_groups(groups, np.zeros(2), content)
+    assert R.select_draft(items, groups, ranked, emb, 1, P, content) == [1]
+    p0 = dict(P, content_weight=0.0)
+    assert R.select_draft(items, groups, R.rank_groups(groups, np.zeros(2)), emb, 1, p0, None) == [0]
+
+
+def test_rank_within_group_by_content_then_sharpness():
+    assert R.rank_groups([[0, 1, 2]], np.array([5.0, 1.0, 9.0]), np.array([0.1, 0.9, 0.1])) == [[1, 2, 0]]
+
+
+def test_content_skipped_when_dimension_differs():
+    assert R.content_scores(rand_unit(5, dim=64)) is None
+
+
 # --- 채점 ---------------------------------------------------------------------
 def test_owner_csv_scoring():
     with tempfile.TemporaryDirectory() as d:

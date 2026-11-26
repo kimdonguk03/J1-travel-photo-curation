@@ -18,8 +18,12 @@
      촬영 시각 미상은 단독 후보.
   2. 유사 컷: 같은 구간에서 각 묶음의 첫 컷(기준 컷, 고정)과 비교해 0.92 이상인 묶음 중 가장 높은 곳에
      넣습니다. 없으면 새 묶음, 동점이면 먼저 만든 묶음.
-  3. 대표 컷: 긴 변 512px 흑백 라플라시안 분산이 큰 순. 동점은 촬영 순서, 상대 경로순.
-  4. 고르기: MMR = (1-λ) x min(사진 수, 5)/5 - λ x (지금까지 고른 대표 컷과의 최대 코사인 유사도), λ=0.5.
+  3. 내용 점수: 사진의 CLIP 벡터를 문장 15개(content_prompts.npz)와 비교해, 앨범 안에서 표준화한 뒤
+     '보여줄 만한 내용'(사람·단체·관광지·풍경·야경·음식·카페) 평균에서 '빼고 싶은 내용'(도로·바닥·문서·
+     스크린샷·흐림·평범) 평균을 뺍니다. 가중치는 학습하지 않고 모두 같습니다.
+  4. 대표 컷: 묶음 안에서 내용 점수가 높은 순, 동점은 선명도(긴 변 512px 흑백 라플라시안 분산), 촬영순.
+  5. 고르기: 관련도 = (1-w) x min(사진 수, 5)/5 + w x 대표 컷의 내용 점수(앨범 안 0~1), w=0.5.
+     MMR = (1-λ) x 관련도 - λ x (지금까지 고른 대표 컷과의 최대 코사인 유사도), λ=0.5.
      묶음이 K개 이상이면 ① 날짜마다 MMR 1위 1장(날짜 수 D>K면 floor((j+0.5)D/K)번째 날짜만)
      ② √사진 수/(배정 수+1)이 가장 큰 구간에 1장씩(미상은 ②부터). 묶음이 K개 미만이면 모든 대표 컷 뒤에
      묶음별 2위, 3위를 첫 컷 촬영순으로 돌아가며 채웁니다.
@@ -56,9 +60,11 @@ DEFAULT_PARAMS = {
     "lambda": 0.5,          # MMR: (1-λ) x 크기 점수 - λ x 중복도
     "size_cap": 5,          # 크기 점수 = min(사진 수, size_cap) / size_cap
     "day_start_hour": 0,    # 날짜 경계 시각 (0 = 자정)
+    "content_weight": 0.5,  # 관련도 = (1-w) x 크기 점수 + w x 내용 점수 (0이면 r1과 같은 크기 점수만)
     "random_seeds": 200,    # 평가에서 무작위 기준선을 평균 낼 시드 수
 }
-ENGINE_VERSION = "r1"  # 규칙 코드를 바꾸면 올리세요
+ENGINE_VERSION = "r2"  # 규칙 코드를 바꾸면 올리세요 (r2: 내용 점수 추가)
+CONTENT_FILE = Path(__file__).with_name("content_prompts.npz")
 FEATURE_VERSION = 5           # 특징 계산(축소·선명도·CLIP 입력)을 바꾸면 올리세요
 RANK_SIDE = 512               # 대표 컷 순위와 CLIP 입력에 쓰는 정방향 축소본의 긴 변
 DECODE_WORKERS = min(4, os.cpu_count() or 1)
@@ -90,10 +96,12 @@ def load_params(path_or_dict=None):
 
 
 def rule_version(params, embedder_name):
-    """규칙 코드·특징 계산·파라미터·모델의 지문. 세션 로그와 발표 수치에 함께 남깁니다."""
+    """규칙 코드·특징 계산·파라미터·모델·문장 벡터의 지문. 세션 로그와 발표 수치에 함께 남깁니다."""
     rule_params = {k: v for k, v in params.items() if k != "random_seeds"}
-    blob = json.dumps({"p": rule_params, "e": ENGINE_VERSION, "f": FEATURE_VERSION, "m": embedder_name},
-                      sort_keys=True)
+    cp = load_content_prompts()
+    content = hashlib.sha1(cp[1].tobytes() + cp[2].tobytes()).hexdigest()[:8] if cp else "none"
+    blob = json.dumps({"p": rule_params, "e": ENGINE_VERSION, "f": FEATURE_VERSION, "m": embedder_name,
+                       "c": content}, sort_keys=True)
     return f"{ENGINE_VERSION}/{embedder_name}/{hashlib.sha1(blob.encode()).hexdigest()[:8]}"
 
 
@@ -407,16 +415,45 @@ def build_groups(items, emb, params, use_clip=True):
     return groups, diag
 
 
-def rank_groups(groups, sharp):
-    """묶음 안 순위: 선명도 내림차순, 동점은 촬영순(인덱스가 촬영순·상대 경로순)."""
-    return [sorted(g, key=lambda i: (-sharp[i], i)) for g in groups]
+_CONTENT = {}
+
+
+def load_content_prompts():
+    """(이름, 벡터, 부호) 또는 None. content_prompts.npz는 content_prompts.py로 만듭니다."""
+    if "v" not in _CONTENT:
+        try:
+            with np.load(CONTENT_FILE, allow_pickle=False) as z:
+                _CONTENT["v"] = ([str(n) for n in z["names"]], np.array(z["vecs"], np.float32),
+                                 np.array(z["signs"], np.int8))
+        except (OSError, KeyError):
+            _CONTENT["v"] = None
+    return _CONTENT["v"]
+
+
+def content_scores(emb):
+    """사진별 내용 점수(앨범 안 상대값). 문장 벡터가 없거나 임베딩 차원이 다르면 None."""
+    cp = load_content_prompts()
+    if emb is None or cp is None or len(emb) == 0 or emb.shape[1] != cp[1].shape[1]:
+        return None
+    S = emb @ cp[1].T
+    std = S.std(axis=0)
+    Z = (S - S.mean(axis=0)) / np.where(std > 1e-9, std, 1.0)  # 문장마다 앨범 안에서 표준화
+    pos, neg = cp[2] > 0, cp[2] < 0
+    return Z[:, pos].mean(axis=1) - Z[:, neg].mean(axis=1)
+
+
+def rank_groups(groups, sharp, content=None):
+    """묶음 안 순위: 내용 점수 내림차순(없으면 생략), 그다음 선명도 내림차순, 촬영순."""
+    if content is None:
+        return [sorted(g, key=lambda i: (-sharp[i], i)) for g in groups]
+    return [sorted(g, key=lambda i: (-content[i], -sharp[i], i)) for g in groups]
 
 
 # ---------------------------------------------------------------------------
 # 고르기
 # ---------------------------------------------------------------------------
-def select_draft(items, groups, ranked, emb, k, params):
-    """초안 K장의 인덱스(촬영순)."""
+def select_draft(items, groups, ranked, emb, k, params, content=None):
+    """초안 K장의 인덱스(촬영순). content가 있으면 관련도에 내용 점수를 섞습니다."""
     n_groups = len(groups)
     if n_groups < k:  # 묶음이 K개 미만: 모든 대표 컷 뒤에 2위, 3위를 첫 컷 촬영순으로 돌아가며
         order = sorted(range(n_groups), key=lambda g: groups[g][0])
@@ -433,6 +470,12 @@ def select_draft(items, groups, ranked, emb, k, params):
     lam, cap = params["lambda"], params["size_cap"]
     reps = [r[0] for r in ranked]
     size = [min(len(g), cap) / cap for g in groups]
+    w = params.get("content_weight", 0.0) if content is not None else 0.0
+    if w:
+        cn = (content - content.min()) / (content.max() - content.min() + 1e-9)  # 앨범 안 0~1
+        rel = [(1 - w) * size[n] + w * float(cn[reps[n]]) for n in range(n_groups)]
+    else:
+        rel = size
     bucket = [day_of(items[g[0]], params) for g in groups]  # None = 촬영 시각 미상
     photo_count = Counter(day_of(it, params) for it in items)
     alive = set(range(n_groups))
@@ -444,7 +487,7 @@ def select_draft(items, groups, ranked, emb, k, params):
 
         def mmr(g):
             red = 0.0 if maxsim[g] is None else maxsim[g]  # 음의 코사인 값도 그대로 씀
-            return (1 - lam) * size[g] - lam * red
+            return (1 - lam) * rel[g] - lam * red
 
         best = max(cands, key=lambda g: (mmr(g), -reps[g]))  # 동점: 대표 컷 촬영순, 상대 경로순
         chosen.append(best)
@@ -483,6 +526,7 @@ class Analysis:
         self.items, self.sharp, self.emb, self.params = items, sharp, emb, params
         self.failed, self.timing, self.embedder_name = failed, timing, embedder_name
         self.rule_version = rule_version(params, embedder_name)
+        self.content = content_scores(emb) if params.get("content_weight", 0.0) else None
         self._groups = {}
 
     def groups(self, kind="time_clip"):
@@ -491,7 +535,7 @@ class Analysis:
             if self.emb is None:
                 raise ValueError("묶기에는 임베딩이 필요합니다 (embedder='clip').")
             g, diag = build_groups(self.items, self.emb, self.params, use_clip=(kind == "time_clip"))
-            self._groups[kind] = (g, rank_groups(g, self.sharp), diag)
+            self._groups[kind] = (g, rank_groups(g, self.sharp, self.content), diag)
         return self._groups[kind]
 
     def default_k(self):
@@ -510,7 +554,7 @@ class Analysis:
         if method not in NEEDS_EMBEDDING:
             raise ValueError(f"모르는 방식: {method}")
         groups, ranked, _ = self.groups(method)
-        return select_draft(self.items, groups, ranked, self.emb, k, self.params)
+        return select_draft(self.items, groups, ranked, self.emb, k, self.params, self.content)
 
     def clusters_json(self, kind="time_clip"):
         _, ranked, _ = self.groups(kind)

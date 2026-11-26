@@ -48,7 +48,7 @@ result = recommend(photos, k, cache_dir=r"C:\j1_data\cache")   # k = min(10, N)
 {
   "clusters": [{"cluster_id": "c0001", "photo_ids": ["p0004", "p0001", "p0002"], "representative_id": "p0004"}],
   "draft_ids": ["p0004", "p0013", "..."],
-  "rule_version": "r1/clip_vision_model_quantized/1a2b3c4d"
+  "rule_version": "r2/clip_vision_model_quantized/1a2b3c4d"
 }
 ```
 
@@ -56,7 +56,7 @@ result = recommend(photos, k, cache_dir=r"C:\j1_data\cache")   # k = min(10, N)
 |---|---|
 | `clusters` | 모든 사진이 정확히 하나의 묶음에 들어갑니다. `photo_ids`는 묶음 안 순위순이고 첫 번째가 `representative_id`입니다. 촬영 시각 미상 사진은 각자 단독 묶음입니다 |
 | `draft_ids` | 중복 없는 k장, 촬영순(미상은 끝) |
-| `rule_version` | 규칙 코드·파라미터·모델의 지문. 실험 로그에 함께 기록합니다 |
+| `rule_version` | 규칙 코드·파라미터·모델·내용 점수 문장의 지문. 실험 로그에 함께 기록합니다 |
 
 추천 모드에서만 호출합니다. 직접 선택 모드는 추천 계산 없이 시작합니다.
 
