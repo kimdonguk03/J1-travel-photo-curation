@@ -354,6 +354,14 @@ def test_owner_csv_scoring():
     assert r["missed"] == ["S02_저녁"]
 
 
+def test_review_scene_hits_count_distinct_scenes_once():
+    """초안 평가의 인정 장면: 같은 장면을 여러 장 담아도 한 번, '해당 없음'과 빈 칸은 세지 않음."""
+    import draft_review as D
+    rows = [{"scene": "S01"}, {"scene": "S01"}, {"scene": "S02"}, {"scene": "none"}, {"scene": ""}]
+    assert D.scene_hits(rows) == 2
+    assert D.scene_hits([]) == 0
+
+
 def test_moment_hits_same_photo_or_near_and_similar():
     """주인이 고른 사진마다: 초안에 같은 사진이 있거나, 10분 안에 찍은 유사도 0.80 이상 사진이 있으면 적중."""
     items = items_at([0, 300, 1000, 4000])
