@@ -290,12 +290,27 @@ def test_rank_model_orders_group_by_learned_score():
         try:
             a = R.Analysis(items, sharp, emb, dict(P, rank_model="small"), [], {}, "t")
             assert R.rank_groups([[0, 1, 2]], sharp, None, a.rank_score) == [[2, 1, 0]]
-            assert "r4/" in a.rule_version and a.rule_version != R.Analysis(items, sharp, emb, P, [], {}, "t").rule_version
+            assert "r4/" in a.rule_version and a.rule_version != R.Analysis(items, sharp, emb, dict(P, rank_model="sharpness"), [], {}, "t").rule_version
         finally:
             R.RANKER_FILE = old_file
             R._RANKER.clear()
-    assert R.Analysis(items, sharp, emb, P, [], {}, "t").rank_score is None
+    assert R.Analysis(items, sharp, emb, dict(P, rank_model="sharpness"), [], {}, "t").rank_score is None
     assert R.rank_groups([[0, 1, 2]], sharp) == [[0, 1, 2]]
+
+
+def test_default_rank_model_uses_shipped_ranker():
+    """기본 설정은 저장소에 든 triage_ranker.npz의 clip 모델로 대표 컷을 고른다."""
+    assert P["rank_model"] == "clip"
+    items = items_at([0, 2, 4])
+    emb = rand_unit(3, dim=512, seed=6).astype(np.float32)
+    a = R.Analysis(items, np.array([30.0, 20.0, 10.0]), emb, P, [], {}, "t")
+    assert a.rank_score is not None and a.rank_score.shape == (3,)
+
+
+def test_rank_model_falls_back_to_sharpness_on_other_embedding():
+    """임베딩 차원이 학습 때와 다르면(다른 CLIP 모델) 오류 없이 선명도로 고른다."""
+    a = R.Analysis(items_at([0, 2]), np.array([1.0, 2.0]), rand_unit(2, dim=8), P, [], {}, "t")
+    assert a.rank_score is None
 
 
 def test_rank_model_missing_file_is_clear_error():

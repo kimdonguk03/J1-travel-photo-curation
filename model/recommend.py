@@ -64,7 +64,7 @@ DEFAULT_PARAMS = {
     "content_weight": 1.0,  #   내용 점수 비중 (0이면 내용 점수를 쓰지 않음)
     "quality_weight": 1.0,  #   화질 점수 비중 (0이면 선명도는 묶음 안 대표 컷 고르기에만 씀)
     "aesthetic_weight": 1.0,  # 미적 점수 비중 (LAION 미적 점수 모델, 0이면 쓰지 않음)
-    "rank_model": "sharpness",  # 묶음 안 대표 컷: sharpness(선명도) 또는 triage_ranker.npz의 small·prompts·clip
+    "rank_model": "clip",  # 묶음 안 대표 컷: triage_ranker.npz의 학습 모델 small·prompts·clip, 또는 sharpness(선명도)
     "random_seeds": 200,    # 평가에서 무작위 기준선을 평균 낼 시드 수
 }
 ENGINE_VERSION = "r4"  # 규칙 코드를 바꾸면 올리세요 (r2: 내용 점수, r3: 흔들림에 강한 선명도와 화질 점수, r4: 미적 점수)
@@ -515,9 +515,15 @@ def ranker_features(kind, sharp, emb, aes=None, content=None, z=None):
 
 
 def ranker_scores(kind, sharp, emb):
-    """학습한 순위 점수 (클수록 사람이 더 좋아할 컷)."""
+    """학습한 순위 점수 (클수록 사람이 더 좋아할 컷).
+    미적 점수·문장 벡터를 쓸 수 없거나 임베딩 차원이 학습 때와 다르면 None (선명도로 고릅니다)."""
     scale, w = load_ranker(kind)
-    return (ranker_features(kind, sharp, emb) / scale) @ w
+    if emb is None or aesthetic_scores(emb) is None or prompt_z(emb) is None:
+        return None
+    x = ranker_features(kind, sharp, emb)
+    if x.shape[1] != len(scale):
+        return None
+    return (x / scale) @ w
 
 
 _AESTHETIC = {}
@@ -641,7 +647,7 @@ class Analysis:
         aes = aesthetic_scores(emb) if params.get("aesthetic_weight", 0.0) else None
         self.aesthetic = quality_scores(aes) if aes is not None else None  # 앨범 안 백분위
         rk = params.get("rank_model", "sharpness")
-        self.rank_score = None if rk == "sharpness" or emb is None else ranker_scores(rk, sharp, emb)
+        self.rank_score = None if rk == "sharpness" else ranker_scores(rk, sharp, emb)
         self._groups = {}
 
     def groups(self, kind="time_clip"):

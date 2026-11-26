@@ -26,7 +26,7 @@
 
 ## 추천 방식
 
-모델을 새로 학습하지 않고, **사전학습된 CLIP 이미지 임베딩, 공개된 미적 점수 모델, EXIF 촬영 시각**을 함께 씁니다. 연사 중 한 장 고르기는 외부 사람 선호 데이터(Photo Triage)로 검증합니다.
+**사전학습된 CLIP 이미지 임베딩, 공개된 미적 점수 모델, EXIF 촬영 시각**을 함께 씁니다. CLIP은 고정하고, 연사 중 한 장 고르기만 외부 사람 선호 데이터(Photo Triage)로 작은 선형 순위 모델을 학습해 씁니다.
 
 1. **시간 구간:** 촬영 시각순으로 직전 사진과 30초, 구간 첫 사진과 120초 안의 사진을 한 구간으로 봅니다.
 2. **유사 컷 묶기:** 같은 구간에서 CLIP 유사도가 0.92 이상인 사진을 '한 장만 남겨도 되는 컷'으로 묶습니다. 같은 해변이라도 단체사진과 바다 풍경은 따로 남습니다.
@@ -59,7 +59,8 @@ frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLi
 │   ├── labeler.py       평가용 정답(owner.csv) 수집 페이지
 │   ├── evaluate.py      추천 방식 비교 평가
 │   ├── draft_review.py  초안 사진 평가 페이지 (수용률, 흔들림)
-│   ├── triage_eval.py   Photo Triage 사람 선호 데이터로 대표 컷 고르기 검증
+│   ├── triage_eval.py   Photo Triage 사람 선호 데이터로 대표 컷 고르기 검증과 순위 모델 학습
+│   ├── triage_ranker.npz  학습한 대표 컷 순위 모델 가중치
 │   ├── aesthetic_head.py / aesthetic_vit_b_32.npz  LAION 미적 점수 선형층 (MIT)
 │   ├── params.json      추천 규칙 파라미터
 │   ├── content_prompts.py / .npz  내용 점수 문장과 그 CLIP 벡터

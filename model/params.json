@@ -9,6 +9,6 @@
   "content_weight": 1.0,
   "quality_weight": 1.0,
   "aesthetic_weight": 1.0,
-  "rank_model": "sharpness",
+  "rank_model": "clip",
   "random_seeds": 200
 }
