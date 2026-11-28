@@ -1,6 +1,6 @@
 # frontend
 
-React 화면입니다. 백엔드(Spring)와 통신합니다. 사진 썸네일과 추천 결과도 백엔드를 거쳐 받습니다(백엔드가 모델 서버를 부름).
+React 화면입니다. 백엔드(Spring, 기본 `http://localhost:8080`)와 통신합니다. 사진 썸네일과 추천 결과도 백엔드를 거쳐 받습니다(백엔드가 모델 서버를 부름). 호출할 API와 응답 형식은 [backend/README.md](../backend/README.md)의 API 절에 있습니다. 개발 서버 주소가 `localhost:5173`이 아니면 백엔드의 `j1.cors-origins`에 추가합니다.
 
 ## 화면
 

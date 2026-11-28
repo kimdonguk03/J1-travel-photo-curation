@@ -1,44 +1,122 @@
 # backend
 
-Spring 서버입니다. 사진 읽기·썸네일·추천은 같은 PC의 모델 서버(`model/server.py`, `127.0.0.1:8001`)에 HTTP로 맡깁니다. 바깥에 공개할 때는 이 서버 포트만 공개하고 모델 서버는 공개하지 않습니다.
+Spring Boot 서버입니다. 사진 읽기·썸네일·추천은 같은 PC의 모델 서버(`model/server.py`, `127.0.0.1:8001`)에 HTTP로 맡기고, 이 서버는 업로드, 사진 ID 관리, 큐레이션 보관함, 편집 실험 기록을 맡습니다. 바깥에 공개할 때는 이 서버 포트만 공개하고 모델 서버는 공개하지 않습니다.
 
-## 맡는 일
+```
+프론트엔드 ──> backend (Spring, :8080) ──> 모델 서버 (파이썬, 127.0.0.1:8001)
+                     └──> DB (H2 파일, ./data/j1db)
+```
 
-- **앨범 불러오기:** 모델 서버 `POST /scan`으로 사진 목록·촬영 시각을 받고 사진 ID를 부여합니다. 목록 썸네일(512px)과 큰 미리보기(1600px)는 모델 서버 `GET /thumb`를 프론트엔드에 전달합니다. 업로드를 받는 배포에서는 업로드 사진을 모델 서버의 `--root` 아래 세션 폴더에 저장한 뒤 그 폴더를 넘깁니다
-- **추천:** 추천 모드에서 모델 서버 `POST /recommend` 호출 ([docs/api.md](../docs/api.md))
-- **최종본 저장:** 경로 검사, 장수·중복 검증, 촬영순 번호를 붙인 원본 복사
-- **인증:** 로컬 아이디·비밀번호, 카카오·구글 OAuth, 게스트
-- **큐레이션 보관함:** SQLite(`app.db`)
-- **평가 로그:** 평가 모드의 세션별 기록
+## 실행
 
-## API (계획)
+JDK 21 이상이 필요합니다(Gradle은 `gradlew`가 받아 옵니다).
+
+```powershell
+# 1) 모델 서버 (--root는 아래 j1.upload-root와 같은 폴더)
+cd model
+py -m pip install -r requirements.txt
+py server.py --root "C:\Users\me\26-2 AI-Product-Challenge\backend\data\uploads" --cache "C:\j1_data\cache"
+
+# 2) 백엔드 (다른 터미널)
+cd backend
+.\gradlew.bat bootRun
+```
+
+- 빌드와 테스트: `.\gradlew.bat build` → `build\libs\curation-0.1.0.jar` (`java -jar`로 실행)
+- `JAVA_HOME`이 잘못 잡혀 있으면 `$env:JAVA_HOME = "C:\Program Files\Java\jdk-25.0.2"`처럼 실제 JDK 폴더로 지정합니다.
+- 업로드 폴더(`data/uploads`)와 DB(`data/j1db`)는 `.gitignore`로 저장소에 올리지 않습니다.
+
+## 코드 구조
+
+```
+src/main/java/com/j1/curation/
+├── CurationApplication.java
+├── config/      J1Properties (j1.* 설정), WebConfig (CORS), ApiExceptionHandler (오류를 {"detail": ...}로)
+├── model/       ModelClient (모델 서버 호출), ModelDtos (모델 서버 JSON), ModelServerException
+├── album/       AlbumController·AlbumService: 업로드, 서버 폴더 열기, 썸네일, 추천, zip 내려받기, 세션 정리
+└── curation/    Curation (엔티티), CurationRepository, CurationController: 게스트, 보관함, 실험 기록 CSV
+```
+
+- 앨범 세션은 메모리에 둡니다(서버를 다시 켜면 다시 불러와야 함). 사진은 `p0001` 같은 ID로만 주고받고, 서버 경로는 프론트엔드에 내보내지 않습니다.
+- 업로드한 사진은 마지막 사용 후 `j1.upload-ttl`(기본 6시간)이 지나면 30분마다 도는 정리 작업이 지웁니다. 앨범을 닫으면(`DELETE`) 바로 지웁니다.
+
+## API
+
+모든 오류 응답은 `{"detail": "한국어 안내"}`이고 화면에 그대로 보여도 됩니다.
 
 | 메서드 | 경로 | 설명 |
 |---|---|---|
-| POST | `/api/auth/register`, `/api/auth/login` | 로컬 회원가입·로그인 |
-| GET | `/api/auth/oauth/{provider}/url`, `/api/auth/oauth/{provider}/callback` | 카카오·구글 로그인 |
-| POST | `/api/auth/guest` | 게스트 세션 |
-| GET | `/api/curations`, `/api/curations/{curation_id}` | 보관함 목록·상세 |
-| POST | `/api/albums/load` | 앨범 불러오기 (추천/직접 선택) |
-| GET | `/api/albums/{album_id}/photos/{photo_id}/thumb`, `.../preview` | 썸네일·미리보기 JPEG |
-| POST | `/api/albums/{album_id}/export` | 최종본 저장 |
-| POST | `/api/sessions/{session_id}/complete` | 평가 모드 저장 완료 통지 |
+| POST | `/api/auth/guest` | 게스트 ID 발급 `{"userId": "guest-…"}`. 이후 `X-J1-User` 헤더로 보냅니다 |
+| POST | `/api/albums/upload?consent=true` | `multipart/form-data`, `files` 여러 개. 원본 그대로 올립니다(촬영 시각 EXIF 유지). 사진이 아닌 파일은 건너뜁니다 |
+| POST | `/api/albums/load` | `{"folder": "C:\\..."}` 서버 PC 폴더 열기. `j1.allow-local-folder=true`일 때만 (시연 PC 전용) |
+| GET | `/api/albums/{albumId}` | 사진 목록 |
+| GET | `/api/albums/{albumId}/photos/{photoId}/thumb?size=512` | 정방향 JPEG (목록 512, 큰 미리보기 1600). `<img src>`로 바로 씁니다 |
+| POST | `/api/albums/{albumId}/recommend` | 본문 생략 또는 `{"k": 10}`. 추천 모드에서만 부릅니다 |
+| GET | `/api/albums/{albumId}/download?photoIds=p0001,p0005` | 고른 원본 zip (촬영순 번호를 파일 이름 앞에 붙임) |
+| DELETE | `/api/albums/{albumId}` | 앨범 닫기. 업로드한 사진을 서버에서 지웁니다 |
+| POST | `/api/curations` | 큐레이션 확정 (헤더 `X-J1-User`) |
+| GET | `/api/curations`, `/api/curations/{id}` | 내 보관함 |
+| GET | `/api/admin/curations.csv` | 편집 실험 기록 CSV. 헤더 `X-J1-Admin`에 환경 변수 `J1_ADMIN_TOKEN` 값을 보냅니다 |
 
-## 모델 서버 연결
+### 응답 예
 
-백엔드보다 먼저 모델 서버를 띄웁니다.
-
-```powershell
-cd model
-py -m pip install -r requirements.txt
-py server.py --root "C:\j1_data\albums" --cache "C:\j1_data\cache"
+`POST /api/albums/upload`
+```json
+{"albumId": "60fa3816-…", "videoCount": 0, "failed": [], "loadedAt": "2026-11-28T08:07:01Z",
+ "photos": [{"photoId": "p0001", "name": "IMG_0001.jpg", "takenAt": "2026-10-01T09:10:00.000+09:00"}]}
 ```
 
-- 시작할 때 `GET http://127.0.0.1:8001/health`로 떠 있는지 확인합니다.
-- 엔드포인트, 요청·응답 예시, Spring `RestClient` 호출 예시, 오류 코드는 [docs/api.md](../docs/api.md)에 있습니다.
-- 추천은 첫 실행에 300장 기준 30초~2분이 걸리므로 HTTP 읽기 시간 제한을 넉넉히(예: 5분) 둡니다.
-- 큐레이션 기록에는 응답의 `rule_version`을 함께 저장합니다.
+`POST /api/albums/{albumId}/recommend`
+```json
+{"albumId": "60fa3816-…", "draftIds": ["p0002", "p0004", "…"],
+ "clusters": [{"clusterId": "c0001", "photoIds": ["p0002", "p0001"], "representativeId": "p0002"}],
+ "missingClusterIds": ["c0007", "c0011"], "ruleVersion": "r4/clip_vision_model_quantized/f183ab07",
+ "readyAt": "2026-11-28T08:07:03Z"}
+```
 
-## 환경 변수
+- **같은 장면 교체:** 초안 사진이 든 묶음의 `photoIds`(순위순)를 보여 줍니다.
+- **빠진 장면 복구:** `missingClusterIds`의 묶음만 모아 보여 줍니다.
+- 추천은 300장 기준 첫 실행에 30초~2분이 걸리므로 화면에 진행 중 표시를 둡니다.
 
-카카오·구글 Client Secret 같은 비밀값은 `backend/.env`에 두고 저장소에 올리지 않습니다. 필요한 키 이름만 `.env.example`로 공유합니다.
+`POST /api/curations`
+```json
+{"title": "제주 여행", "albumId": "60fa3816-…", "mode": "recommend",
+ "finalIds": ["p0002", "p0004", "…"], "readyAt": "2026-11-28T08:07:03Z",
+ "confirmedAt": "2026-11-28T08:10:41Z", "satisfaction": 4}
+```
+
+- `mode`는 `recommend`(추천 편집) 또는 `manual`(직접 고르기)입니다.
+- 서버가 앨범 세션에서 불러오기 시작 시각, 추천 초안, `rule_version`, 원래 파일 이름을 채웁니다. 초안 사진과 최종 사진이 함께 저장되므로, 편집 실험의 "복구한 장면"을 나중에 계산할 수 있습니다.
+- `readyAt`은 편집 화면이 준비된 시각입니다. 추천 모드는 추천 응답의 `readyAt`, 직접 고르기는 목록을 다 그린 시각을 보냅니다. `confirmedAt`을 생략하면 서버 시각을 씁니다.
+
+## 설정 (`application.properties`)
+
+| 키 | 기본값 | 설명 |
+|---|---|---|
+| `j1.model-server-url` | `http://127.0.0.1:8001` | 모델 서버 주소 |
+| `j1.model-timeout` | `5m` | 모델 서버 응답 대기 |
+| `j1.upload-root` | `./data/uploads` | 업로드 폴더. 모델 서버 `--root`와 같아야 합니다 |
+| `j1.upload-ttl` | `6h` | 업로드 사진 보관 시간 |
+| `j1.allow-local-folder` | `false` | 서버 폴더로 불러오기 (시연 PC에서만 켬. 모델 서버 `--root`에도 그 폴더를 추가) |
+| `j1.cors-origins` | `http://localhost:5173` 등 | 프론트엔드 개발 서버 주소 |
+| `j1.admin-token` | 환경 변수 `J1_ADMIN_TOKEN` | 실험 기록 CSV용. 저장소에 값을 넣지 않습니다 |
+
+DB는 파일 H2입니다. 다른 DB로 바꾸려면 `spring.datasource.*`와 의존성만 바꾸면 됩니다.
+
+## 다른 사람이 써 보게 하기
+
+도메인 없이 무료 터널로 이 서버 포트만 공개합니다. 모델 서버(8001)는 공개하지 않습니다.
+
+```powershell
+cloudflared tunnel --url http://localhost:8080
+```
+
+- 출력되는 `https://….trycloudflare.com` 주소로 접속합니다. PC와 두 서버가 켜져 있는 동안만 접속됩니다.
+- 프론트엔드를 빌드해 같은 주소에서 내보내거나(`src/main/resources/static`), 프론트엔드 주소를 `j1.cors-origins`에 추가합니다.
+- 업로드 화면에 "사진은 추천 계산에만 쓰고 서버에서 지운다"는 안내와 동의 체크를 두고, 동의했을 때만 `consent=true`로 올립니다.
+- 모델 서버의 특징 캐시(`--cache`)에도 512px 축소본이 남으니, 공개 기간이 끝나면 캐시 폴더도 지웁니다.
+
+## 아직 없는 것
+
+- 로컬 계정·카카오·구글 로그인: 지금은 게스트 ID(`X-J1-User`)로만 구분합니다. 로그인을 붙이면 `CurationController.owner()`가 사용자 ID를 돌려주게 바꾸면 됩니다.
+- 서버 PC 폴더로 최종본 저장: 업로드 배포에서는 zip 내려받기로 대신합니다.

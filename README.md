@@ -105,9 +105,13 @@ py server.py --root "C:\j1_data\albums" --cache "C:\j1_data\cache"
 
 Google Drive의 사진으로 실험하려면 [notebooks/experiments.ipynb](notebooks/experiments.ipynb)를 Colab에서 엽니다([바로 열기](https://colab.research.google.com/github/kimdonguk03/J1-travel-photo-curation/blob/main/notebooks/experiments.ipynb)). 처리 시간, 기준값 점검, 평가 앨범 정답 페이지, 비교 평가, 초안 평가, 외부 검증을 순서대로 실행할 수 있습니다.
 
-### 화면과 서버
+### 백엔드
 
-[frontend/README.md](frontend/README.md), [backend/README.md](backend/README.md)를 참고하세요.
+모델 서버를 먼저 띄운 뒤 `backend`에서 `.\gradlew.bat bootRun`으로 실행합니다(JDK 21 이상). API와 설정은 [backend/README.md](backend/README.md)에 있습니다.
+
+### 화면
+
+[frontend/README.md](frontend/README.md)를 참고하세요.
 
 ## 평가
 
