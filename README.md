@@ -73,7 +73,7 @@ frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLi
     ├── recommendation.md  추천 규칙과 평가 방법
     ├── experiments.md     실험 기록과 남은 검증
     ├── results/           외부 검증 결과 (수치만)
-    └── presentation/      발표 자료 초안 (모델 개선 과정, 한계와 화면의 역할)
+    └── presentation/      발표 자료 초안 (모델 개선 과정, 평가 결과, 한계와 화면의 역할)
 ```
 
 ## 시작하기

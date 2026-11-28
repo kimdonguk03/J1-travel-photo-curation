@@ -1,0 +1,9 @@
+﻿album,album_id,method,rule_version,k,scene_hits,scenes,moment_hits,matched,picks,sharp_pct,missed
+Foreign_trip,eval_a,random,r4/clip_vision_model_quantized/f183ab07,10,1.445,11,2.675,0.27,10,50.8,
+Foreign_trip,eval_a,uniform,r4/clip_vision_model_quantized/f183ab07,10,1,11,1,0,10,48.5,S01_01/26(월) 19:56 / S02_01/26(월) 19:50 / S04_01/26(월) 19:46 / S05_01/26(월) 19:42 / S06_01/26(월) 19:40 / S07_01/26(월) 19:37 / S08_01/26(월) 16:39 / S09_01/26(월) 16:31 / S10_01/26(월) 16:22 / S11_01/26(월) 14:04
+Foreign_trip,eval_a,time,r4/clip_vision_model_quantized/f183ab07,10,2,11,3,0,10,72.8,S01_01/26(월) 19:56 / S03_01/26(월) 19:47 / S04_01/26(월) 19:46 / S05_01/26(월) 19:42 / S06_01/26(월) 19:40 / S07_01/26(월) 19:37 / S08_01/26(월) 16:39 / S09_01/26(월) 16:31 / S10_01/26(월) 16:22
+Foreign_trip,eval_a,time_clip,r4/clip_vision_model_quantized/f183ab07,10,2,11,4,0,10,76.9,S01_01/26(월) 19:56 / S03_01/26(월) 19:47 / S04_01/26(월) 19:46 / S05_01/26(월) 19:42 / S06_01/26(월) 19:40 / S07_01/26(월) 19:37 / S08_01/26(월) 16:39 / S09_01/26(월) 16:31 / S10_01/26(월) 16:22
+Buyeo_trip,eval_b,random,r4/clip_vision_model_quantized/f183ab07,10,2.26,10,3.565,0.66,10,50.8,
+Buyeo_trip,eval_b,uniform,r4/clip_vision_model_quantized/f183ab07,10,3,10,5,0,10,47.3,S01_11/25(수) 12:44 / S02_11/25(수) 15:48 / S04_11/25(수) 16:00 / S05_11/25(수) 16:10 / S07_11/25(수) 18:18 / S08_11/27(금) 11:57 / S10_11/26(목) 19:41
+Buyeo_trip,eval_b,time,r4/clip_vision_model_quantized/f183ab07,10,2,10,3,1,10,57.6,S01_11/25(수) 12:44 / S02_11/25(수) 15:48 / S03_11/25(수) 15:56 / S04_11/25(수) 16:00 / S06_11/25(수) 16:21 / S07_11/25(수) 18:18 / S08_11/27(금) 11:57 / S10_11/26(목) 19:41
+Buyeo_trip,eval_b,time_clip,r4/clip_vision_model_quantized/f183ab07,10,2,10,3,2,10,68.3,S01_11/25(수) 12:44 / S02_11/25(수) 15:48 / S03_11/25(수) 15:56 / S04_11/25(수) 16:00 / S06_11/25(수) 16:21 / S07_11/25(수) 18:18 / S08_11/27(금) 11:57 / S10_11/26(목) 19:41

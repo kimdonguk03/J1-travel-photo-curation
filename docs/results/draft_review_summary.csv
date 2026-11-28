@@ -1,0 +1,7 @@
+album,method,rule_version,drafts,keep_yes,blur_yes,scenes_owner,scenes_auto,same,auto_only,owner_only,different,neither
+Foreign_trip,proposal,r4/clip_vision_model_quantized/f183ab07,10,10,0,2,4,2,2,0,0,6
+Foreign_trip,no_quality,r4/clip_vision_model_quantized/f183ab07,10,10,0,4,4,,,,,
+Foreign_trip,uniform,r4/clip_vision_model_quantized/f183ab07,10,5,5,0,1,0,1,0,0,9
+Buyeo_trip,proposal,r4/clip_vision_model_quantized/f183ab07,10,8,2,3,3,3,0,0,0,7
+Buyeo_trip,no_quality,r4/clip_vision_model_quantized/f183ab07,10,6,1,4,5,,,,,
+Buyeo_trip,uniform,r4/clip_vision_model_quantized/f183ab07,10,6,1,5,5,5,0,0,0,5
