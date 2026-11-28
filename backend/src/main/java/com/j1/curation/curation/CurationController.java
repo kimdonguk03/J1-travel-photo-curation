@@ -77,10 +77,12 @@ public class CurationController {
 	public CurationView create(@RequestHeader("X-J1-User") String user, @Valid @RequestBody CreateRequest req) {
 		AlbumService.AlbumRecord album = albums.record(req.albumId(), req.finalIds());
 		List<String> draft = req.draftIds() != null ? req.draftIds() : album.draftIds();
+		boolean rec = "recommend".equals(req.mode());
 		Curation c = new Curation(owner(user), req.title(), req.albumId(), req.mode(),
-				"recommend".equals(req.mode()) ? album.ruleVersion() : null,
-				"recommend".equals(req.mode()) ? String.join(",", draft) : "",
+				rec ? album.ruleVersion() : null,
+				rec ? String.join(",", draft) : "",
 				String.join(",", req.finalIds()), String.join("\n", album.names()),
+				rec ? String.join("\n", albums.names(req.albumId(), draft)) : "",
 				album.loadedAt(), req.readyAt(), req.confirmedAt() != null ? req.confirmedAt() : Instant.now(),
 				req.satisfaction());
 		return CurationView.of(repo.save(c));
@@ -119,6 +121,32 @@ public class CurationController {
 					.append('"').append(nz(c.getDraftIds())).append("\",\"").append(c.getFinalIds()).append("\"\r\n");
 		}
 		return ResponseEntity.ok().contentType(MediaType.parseMediaType("text/csv; charset=UTF-8")).body(sb.toString());
+	}
+
+	/**
+	 * 편집 실험 분석용 전체 기록 (사진 파일 이름 포함). model/edit_eval.py가 읽습니다.
+	 * 사진 이름이 들어 있으므로 관리자 토큰이 필요하고, 받은 파일은 저장소에 올리지 않습니다.
+	 */
+	@GetMapping("/api/admin/curations.json")
+	public List<Map<String, Object>> exportJson(@RequestHeader(value = "X-J1-Admin", required = false) String token) {
+		if (props.adminToken() == null || props.adminToken().isBlank() || !props.adminToken().equals(token)) {
+			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "관리자 토큰이 필요합니다.");
+		}
+		return repo.findAll().stream().map(c -> {
+			Map<String, Object> m = new java.util.LinkedHashMap<>();
+			m.put("id", c.getId());
+			m.put("owner", c.getOwnerId());
+			m.put("title", c.getTitle());
+			m.put("mode", c.getMode());
+			m.put("ruleVersion", c.getRuleVersion());
+			m.put("loadedAt", nz(c.getLoadedAt()));
+			m.put("readyAt", nz(c.getReadyAt()));
+			m.put("confirmedAt", nz(c.getConfirmedAt()));
+			m.put("satisfaction", c.getSatisfaction());
+			m.put("draftNames", split(c.getDraftNames()));
+			m.put("finalNames", split(c.getPhotoNames()));
+			return m;
+		}).toList();
 	}
 
 	private static String owner(String user) {

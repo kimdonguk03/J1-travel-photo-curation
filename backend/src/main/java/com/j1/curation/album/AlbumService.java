@@ -172,6 +172,12 @@ public class AlbumService {
 				r == null ? null : r.rule_version());
 	}
 
+	/** 사진 ID들의 원래 파일 이름 (없는 ID는 건너뜀). */
+	public List<String> names(String albumId, List<String> photoIds) {
+		AlbumSession s = session(albumId);
+		return photoIds.stream().map(s::photo).filter(java.util.Objects::nonNull).map(ModelPhoto::relpath).toList();
+	}
+
 	/** 사진 ID가 모두 이 앨범에 있는지 확인합니다 (내려받기를 시작하기 전에). */
 	public void requirePhotos(String albumId, List<String> photoIds) {
 		AlbumSession s = session(albumId);

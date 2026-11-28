@@ -77,7 +77,8 @@ src/main/java/com/j1/curation/
 | DELETE | `/api/albums/{albumId}` | 앨범 닫기. 업로드한 사진을 서버에서 지웁니다 |
 | POST | `/api/curations` | 큐레이션 확정 (헤더 `X-J1-User`) |
 | GET | `/api/curations`, `/api/curations/{id}` | 내 보관함 |
-| GET | `/api/admin/curations.csv` | 편집 실험 기록 CSV. 헤더 `X-J1-Admin`에 환경 변수 `J1_ADMIN_TOKEN` 값을 보냅니다 |
+| GET | `/api/admin/curations.csv` | 편집 실험 기록 CSV (사진 이름 없음). 헤더 `X-J1-Admin`에 환경 변수 `J1_ADMIN_TOKEN` 값을 보냅니다 |
+| GET | `/api/admin/curations.json` | 편집 실험 분석용 전체 기록 (초안·최종 사진 이름 포함, `model/edit_eval.py` 입력). 같은 토큰이 필요하고, 받은 파일은 저장소에 올리지 않습니다 |
 
 ### 응답 예
 
@@ -130,7 +131,7 @@ DB는 파일 H2입니다. 다른 DB로 바꾸려면 `spring.datasource.*`와 의
 - 업로드 사진은 앨범을 닫거나 `j1.upload-ttl`이 지나면 지워집니다. 모델 서버의 특징 캐시(`--cache`)에는 512px 축소본이 남으니 주기적으로 지웁니다.
 - 모델 서버(8001)는 이 서버만 부르도록 같은 PC 안에 두고 바깥에 열지 않습니다.
 
-## 아직 없는 것
+## 범위
 
-- 로컬 계정·카카오·구글 로그인: 지금은 게스트 ID(`X-J1-User`)로만 구분합니다. 로그인을 붙이면 `CurationController.owner()`가 사용자 ID를 돌려주게 바꾸면 됩니다.
-- 서버 PC 폴더로 최종본 저장: 업로드 배포에서는 zip 내려받기로 대신합니다.
+- 사용자 구분은 게스트 ID(`X-J1-User`)로만 합니다. 계정 로그인은 이번 범위에 넣지 않았습니다. 붙이려면 `CurationController.owner()`가 사용자 ID를 돌려주게 바꾸면 됩니다.
+- 최종본은 원본 zip 내려받기로 제공합니다.

@@ -47,6 +47,9 @@ public class Curation {
 	@Column(columnDefinition = "TEXT")
 	private String photoNames;        // 확정한 사진의 원래 파일 이름 (보관함 표시용)
 
+	@Column(columnDefinition = "TEXT")
+	private String draftNames;        // 추천 초안 사진의 원래 파일 이름 (편집 실험 분석용)
+
 	private Instant loadedAt;         // 불러오기 시작
 	private Instant readyAt;          // 편집 화면 준비 (추천 모드는 추천 응답 시각)
 	private Instant confirmedAt;      // 확정
@@ -59,7 +62,7 @@ public class Curation {
 	}
 
 	public Curation(String ownerId, String title, String albumId, String mode, String ruleVersion, String draftIds,
-			String finalIds, String photoNames, Instant loadedAt, Instant readyAt, Instant confirmedAt,
+			String finalIds, String photoNames, String draftNames, Instant loadedAt, Instant readyAt, Instant confirmedAt,
 			Integer satisfaction) {
 		this.ownerId = ownerId;
 		this.title = title;
@@ -69,6 +72,7 @@ public class Curation {
 		this.draftIds = draftIds;
 		this.finalIds = finalIds;
 		this.photoNames = photoNames;
+		this.draftNames = draftNames;
 		this.loadedAt = loadedAt;
 		this.readyAt = readyAt;
 		this.confirmedAt = confirmedAt;
@@ -84,6 +88,7 @@ public class Curation {
 	public String getDraftIds() { return draftIds; }
 	public String getFinalIds() { return finalIds; }
 	public String getPhotoNames() { return photoNames; }
+	public String getDraftNames() { return draftNames; }
 	public Instant getLoadedAt() { return loadedAt; }
 	public Instant getReadyAt() { return readyAt; }
 	public Instant getConfirmedAt() { return confirmedAt; }
