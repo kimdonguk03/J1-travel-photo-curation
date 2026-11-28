@@ -1,0 +1,15 @@
+album,variant,rule_version,k,moment_hits,picks,scene_hits,scenes,matched,sharp_pct,changed_vs_full
+Foreign_trip,제안 방식 (전체),r4/clip_vision_model_quantized/f183ab07,10,4,10,2,11,0,77,0
+Foreign_trip,미적 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,5,10,3,11,0,73,2
+Foreign_trip,화질 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,4,10,2,11,0,61,2
+Foreign_trip,화질·미적 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,4,10,3,11,0,56,5
+Foreign_trip,내용 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,5,10,3,11,0,76,1
+Foreign_trip,순위 모델 대신 선명도,r4/clip_vision_model_quantized/f183ab07,10,3,10,2,11,1,69,8
+Foreign_trip,크기 점수만,r4/clip_vision_model_quantized/f183ab07,10,3,10,2,11,0,61,5
+Buyeo_trip,제안 방식 (전체),r4/clip_vision_model_quantized/f183ab07,10,3,10,2,10,2,68,0
+Buyeo_trip,미적 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,3,10,2,10,2,74,3
+Buyeo_trip,화질 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,4,10,2,10,0,53,3
+Buyeo_trip,화질·미적 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,5,10,4,10,0,38,6
+Buyeo_trip,내용 점수 끔,r4/clip_vision_model_quantized/f183ab07,10,3,10,2,10,1,73,4
+Buyeo_trip,순위 모델 대신 선명도,r4/clip_vision_model_quantized/f183ab07,10,3,10,2,10,1,67,5
+Buyeo_trip,크기 점수만,r4/clip_vision_model_quantized/f183ab07,10,6,10,4,10,0,44,7
