@@ -15,7 +15,7 @@ JDK 21 이상이 필요합니다(Gradle은 `gradlew`가 받아 옵니다).
 # 1) 모델 서버 (--root는 아래 j1.upload-root와 같은 폴더)
 cd model
 py -m pip install -r requirements.txt
-py server.py --root "C:\Users\me\26-2 AI-Product-Challenge\backend\data\uploads" --cache "C:\j1_data\cache"
+py server.py --root "..\backend\data\uploads" --cache "C:\j1_data\cache"
 
 # 2) 백엔드 (다른 터미널)
 cd backend
@@ -124,18 +124,11 @@ src/main/java/com/j1/curation/
 
 DB는 파일 H2입니다. 다른 DB로 바꾸려면 `spring.datasource.*`와 의존성만 바꾸면 됩니다.
 
-## 다른 사람이 써 보게 하기
+## 업로드한 사진 처리
 
-도메인 없이 무료 터널로 이 서버 포트만 공개합니다. 모델 서버(8001)는 공개하지 않습니다.
-
-```powershell
-cloudflared tunnel --url http://localhost:8080
-```
-
-- 출력되는 `https://….trycloudflare.com` 주소로 접속합니다. PC와 두 서버가 켜져 있는 동안만 접속됩니다.
-- 프론트엔드를 빌드해 같은 주소에서 내보내거나(`src/main/resources/static`), 프론트엔드 주소를 `j1.cors-origins`에 추가합니다.
 - 업로드 화면에 "사진은 추천 계산에만 쓰고 서버에서 지운다"는 안내와 동의 체크를 두고, 동의했을 때만 `consent=true`로 올립니다.
-- 모델 서버의 특징 캐시(`--cache`)에도 512px 축소본이 남으니, 공개 기간이 끝나면 캐시 폴더도 지웁니다.
+- 업로드 사진은 앨범을 닫거나 `j1.upload-ttl`이 지나면 지워집니다. 모델 서버의 특징 캐시(`--cache`)에는 512px 축소본이 남으니 주기적으로 지웁니다.
+- 모델 서버(8001)는 이 서버만 부르도록 같은 PC 안에 두고 바깥에 열지 않습니다.
 
 ## 아직 없는 것
 
