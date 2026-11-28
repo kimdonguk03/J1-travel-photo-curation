@@ -1,11 +1,11 @@
 # backend
 
-FastAPI 서버입니다. 시연 PC의 `127.0.0.1`에서만 실행합니다.
+Spring 서버입니다. 사진 읽기·썸네일·추천은 같은 PC의 모델 서버(`model/server.py`, `127.0.0.1:8001`)에 HTTP로 맡깁니다. 바깥에 공개할 때는 이 서버 포트만 공개하고 모델 서버는 공개하지 않습니다.
 
 ## 맡는 일
 
-- **앨범 불러오기:** 폴더 스캔, 사진 ID 부여, 목록 썸네일(512px)과 큰 미리보기(1600px) 제공. 지원 확장자는 `model/j1_image.py`의 `PHOTO_EXTS`(jpg·jpeg·png·heic·heif·webp)를 그대로 씁니다
-- **추천:** 추천 모드에서 추천 모듈 호출 ([docs/api.md](../docs/api.md))
+- **앨범 불러오기:** 모델 서버 `POST /scan`으로 사진 목록·촬영 시각을 받고 사진 ID를 부여합니다. 목록 썸네일(512px)과 큰 미리보기(1600px)는 모델 서버 `GET /thumb`를 프론트엔드에 전달합니다. 업로드를 받는 배포에서는 업로드 사진을 모델 서버의 `--root` 아래 세션 폴더에 저장한 뒤 그 폴더를 넘깁니다
+- **추천:** 추천 모드에서 모델 서버 `POST /recommend` 호출 ([docs/api.md](../docs/api.md))
 - **최종본 저장:** 경로 검사, 장수·중복 검증, 촬영순 번호를 붙인 원본 복사
 - **인증:** 로컬 아이디·비밀번호, 카카오·구글 OAuth, 게스트
 - **큐레이션 보관함:** SQLite(`app.db`)
@@ -24,18 +24,20 @@ FastAPI 서버입니다. 시연 PC의 `127.0.0.1`에서만 실행합니다.
 | POST | `/api/albums/{album_id}/export` | 최종본 저장 |
 | POST | `/api/sessions/{session_id}/complete` | 평가 모드 저장 완료 통지 |
 
-## 추천 모듈 불러오기
+## 모델 서버 연결
 
-추천 코드는 저장소 루트의 `model/` 폴더에 있습니다.
+백엔드보다 먼저 모델 서버를 띄웁니다.
 
-```python
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).resolve().parents[1] / "model"))  # backend/ 바로 아래 파일 기준
-from j1_image import scan_folder, read_taken_at, jpeg_bytes
-from recommend import recommend
+```powershell
+cd model
+py -m pip install -r requirements.txt
+py server.py --root "C:\j1_data\albums" --cache "C:\j1_data\cache"
 ```
+
+- 시작할 때 `GET http://127.0.0.1:8001/health`로 떠 있는지 확인합니다.
+- 엔드포인트, 요청·응답 예시, Spring `RestClient` 호출 예시, 오류 코드는 [docs/api.md](../docs/api.md)에 있습니다.
+- 추천은 첫 실행에 300장 기준 30초~2분이 걸리므로 HTTP 읽기 시간 제한을 넉넉히(예: 5분) 둡니다.
+- 큐레이션 기록에는 응답의 `rule_version`을 함께 저장합니다.
 
 ## 환경 변수
 

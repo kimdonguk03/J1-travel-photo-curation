@@ -38,22 +38,25 @@
 
 ## 구성
 
-모든 구성 요소가 한 PC에서 실행되며, 인터넷 없이도 핵심 기능을 쓸 수 있습니다.
+모든 구성 요소가 한 PC(또는 한 서버)에서 실행됩니다. 모델 서버는 백엔드만 부르고 바깥에 공개하지 않습니다.
 
 ```
-frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLite (app.db)
-                                      │
-                                      └──>  model (사진 읽기, CLIP 추천)
+frontend (React)  ──HTTP──>  backend (Spring)  ──>  DB (보관함, 계정)
+                                   │  HTTP, 127.0.0.1:8001
+                                   └──>  model server (파이썬: 사진 스캔, 썸네일, CLIP 추천)
 ```
+
+사진 읽기(HEIC 포함), 촬영 시각, 회전, 추천은 모두 모델 서버가 맡습니다. 백엔드가 모델 서버를 부르는 방법은 [docs/api.md](docs/api.md)에 있습니다.
 
 ## 저장소 구조
 
 ```
 ├── frontend/      React 화면
-├── backend/       FastAPI 서버, 인증, 보관함
+├── backend/       Spring 서버: 인증, 보관함, 업로드, 최종본 저장
 ├── model/         추천 모듈과 평가 도구
 │   ├── j1_image.py      사진 읽기: 폴더 스캔, 촬영 시각, 정방향 이미지, 썸네일
 │   ├── recommend.py     추천: recommend(photos, k)
+│   ├── server.py        모델 서버 (HTTP: /scan, /thumb, /recommend)
 │   ├── curation.py      개발 앨범 점검 화면
 │   ├── pair_check.py    사진 쌍 표시로 유사도 기준값 점검
 │   ├── labeler.py       평가용 정답(owner.csv) 수집 페이지
@@ -69,7 +72,7 @@ frontend (React)  ──HTTP──>  backend (FastAPI, 127.0.0.1)  ──>  SQLi
 ├── notebooks/
 │   └── experiments.ipynb  Colab 개발 실험 (처리 시간, 기준값 점검, 정답 페이지, 비교 평가, 초안 평가, 외부 검증)
 └── docs/
-    ├── api.md             서버에서 추천 모듈을 쓰는 방법
+    ├── api.md             모델 서버 API (백엔드에서 호출하는 방법)
     ├── recommendation.md  추천 규칙과 평가 방법
     ├── experiments.md     실험 기록과 남은 검증
     ├── results/           외부 검증 결과 (수치만)
@@ -88,6 +91,15 @@ py tests/test_rules.py
 ```
 
 처음 실행할 때 CLIP 모델(약 89MB)을 내려받습니다.
+
+### 모델 서버
+
+```powershell
+cd model
+py server.py --root "C:\j1_data\albums" --cache "C:\j1_data\cache"
+```
+
+`http://127.0.0.1:8001/docs`에서 엔드포인트를 직접 호출해 볼 수 있습니다. 자세한 내용은 [docs/api.md](docs/api.md)에 있습니다.
 
 ### Colab 실험
 
@@ -109,8 +121,8 @@ Google Drive의 사진으로 실험하려면 [notebooks/experiments.ipynb](noteb
 
 | 역할 | 맡은 일 |
 |---|---|
-| 모델·평가 | 모델 선정, 전처리·추론, 추천 규칙, 성능 평가 (`model/`) |
-| 프론트엔드·백엔드 | React 화면, FastAPI 서버, 인증·보관함, UX (`frontend/`, `backend/`) |
+| 모델·평가·백엔드 | 모델 선정, 전처리·추론, 추천 규칙, 성능 평가, 모델 서버 (`model/`), Spring 서버와 배포 (`backend/`) |
+| 프론트엔드 | React 화면, UX (`frontend/`) |
 
 ## 데이터와 개인정보
 

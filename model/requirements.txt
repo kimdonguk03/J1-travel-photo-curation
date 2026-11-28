@@ -3,3 +3,5 @@ Pillow
 pillow-heif
 onnxruntime
 huggingface-hub
+fastapi
+uvicorn
