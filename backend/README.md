@@ -26,6 +26,27 @@ cd backend
 - `JAVA_HOME`이 잘못 잡혀 있으면 `$env:JAVA_HOME = "C:\Program Files\Java\jdk-25.0.2"`처럼 실제 JDK 폴더로 지정합니다.
 - 업로드 폴더(`data/uploads`)와 DB(`data/j1db`)는 `.gitignore`로 저장소에 올리지 않습니다.
 
+### Ubuntu (WSL 또는 서버)
+
+```bash
+sudo apt update && sudo apt install -y git python3-venv openjdk-21-jdk-headless libheif1
+git clone https://github.com/kimdonguk03/J1-travel-photo-curation.git ~/j1 && cd ~/j1
+
+# 모델 서버
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r model/requirements.txt
+mkdir -p ~/j1-data/uploads ~/j1-data/cache
+(cd model && python server.py --root ~/j1-data/uploads --cache ~/j1-data/cache) &
+
+# 백엔드 (다른 터미널)
+cd ~/j1/backend
+./gradlew bootRun --args="--j1.upload-root=$HOME/j1-data/uploads"
+```
+
+- 사진과 캐시는 Linux 쪽 폴더(`~/j1-data`)에 둡니다. WSL에서 `/mnt/c/...`(Windows 디스크)에 두면 파일 읽기가 크게 느려집니다.
+- WSL에서 띄운 서버는 Windows 브라우저에서도 `http://localhost:8080`으로 열립니다.
+- 계속 켜 두는 서버라면 두 프로세스를 systemd 서비스로 등록하면 재부팅 후에도 자동으로 뜹니다.
+
 ## 코드 구조
 
 ```
